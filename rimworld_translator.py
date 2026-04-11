@@ -53,6 +53,7 @@ def unmask_placeholders(text, map_str):
 # ── Tag rules ─────────────────────────────────────────────────────────────────
 
 BLACKLIST_TAGS = {
+    # Core engine tags
     "defname", "parentname", "abstract",
     "thingclass", "workerclass", "inspectorclass", "compclass",
     "thinkclass", "jobclass", "lordclass", "worldobjectclass",
@@ -60,9 +61,22 @@ BLACKLIST_TAGS = {
     "tickertype", "altitudelayer", "passability", "linkflags",
     "designationcategory", "thingcategory", "shadertype",
     "typeof", "markdef", "wreckeddef",
+    # Enum / code-value tags
+    "paramupdatemode", "filterproperty", "capacity", "category",
+    "terrainaffordanceneeded", "tradeability", "hediff", "workskill",
+    "minqualityforartistic", "modifier", "hediffsolid", "pawntype",
+    "movementtype", "techlevel", "effectworking", "armorcategory",
+    "rotdrawmode", "debuglabel", "success", "linkedbodypartsgroup",
+    "explosivedamagetype", "tag", "stat", "surfacetype",
+    "repaireffect", "worktype", "priority", "overrideminifiedrot",
+    "developmentalstagefilter", "destination", "resourcereadoutpriority",
+    "price", "hediffskin",
+    # Coordinate / visual tags
+    "volume", "rect", "drawoffset", "dooroffset",
+    "texturescale", "minifieddrawoffset", "weapondrawoffset",
 }
 
-BLACKLIST_SUFFIXES = ("class", "path", "def", "defs")
+BLACKLIST_SUFFIXES = ("class", "path", "def", "defs", "color", "size", "offset")
 BLACKLIST_PREFIXES = ("sound",)
 
 KNOWN_TEXT_TAGS = {
@@ -117,7 +131,7 @@ def is_definitely_technical(text):
         return True
     if t.startswith("<") or t.startswith("{"):
         return True
-    if re.match(r"^\(\d+,\s*\d+\)$", t):
+    if re.match(r"^\(-?[\d.]+,\s*-?[\d.]+(?:,\s*-?[\d.]+)*\)$", t):
         return True
     if re.match(r"^#[0-9a-fA-F]{6,8}$", t):
         return True
