@@ -414,8 +414,10 @@ class RimWorldTranslator:
 
     # ── i18n helper ───────────────────────────────────────────────────────────
 
-    def t(self, key, *args):
+    def t(self, key, *args, **kwargs):
         template = STRINGS[self.language.get()].get(key, key)
+        if kwargs:
+            return template.format(*args, **kwargs)
         return template.format(*args) if args else template
 
     # ── Settings ──────────────────────────────────────────────────────────────
