@@ -10,6 +10,37 @@ import json
 import csv
 from collections import defaultdict
 
+PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_]\w*\}|\[[A-Z_][A-Z_0-9]*\]")
+
+
+def mask_placeholders(text):
+    holders = PLACEHOLDER_RE.findall(text)
+    if not holders:
+        return text, ""
+    mapping = {}
+    masked = text
+    for i, h in enumerate(holders):
+        token = f"{{{i}}}"
+        if h not in mapping:
+            mapping[h] = token
+    for original, token in mapping.items():
+        masked = masked.replace(original, token)
+    map_str = "; ".join(f"{v}={k}" for k, v in mapping.items())
+    return masked, map_str
+
+
+def unmask_placeholders(text, map_str):
+    if not map_str or not map_str.strip():
+        return text
+    result = text
+    for pair in map_str.split(";"):
+        pair = pair.strip()
+        if "=" not in pair:
+            continue
+        token, original = pair.split("=", 1)
+        result = result.replace(token.strip(), original.strip())
+    return result
+
 
 BLACKLIST_TAGS = {
     "defname", "parentname", "abstract",
@@ -442,6 +473,7 @@ class RimWorldTranslator:
                         "Original Text",
                         "Translation",
                         "Status",
+                        "Placeholders",
                     ]
                 )
 
@@ -478,7 +510,7 @@ class RimWorldTranslator:
                 for (file_path, original), translation in old_translations.items():
                     if (file_path, original) not in seen_keys:
                         writer.writerow(
-                            [file_path, "", "", original, translation, "UNUSED"]
+                            [file_path, "", "", original, translation, "UNUSED", ""]
                         )
                         unused_count += 1
 
@@ -561,16 +593,28 @@ class RimWorldTranslator:
             key = (relative_path, text)
             seen_keys.add(key)
 
+            masked_text, map_str = mask_placeholders(text)
+
             old_translation = old_translations.get(key, "")
             if old_translation:
+                masked_translation, _ = mask_placeholders(old_translation)
                 status = "DONE"
                 merged += 1
             else:
+                masked_translation = ""
                 status = "NEW"
                 new += 1
 
             csv_writer.writerow(
-                [relative_path, tag_name, xpath, text, old_translation, status]
+                [
+                    relative_path,
+                    tag_name,
+                    xpath,
+                    masked_text,
+                    masked_translation,
+                    status,
+                    map_str,
+                ]
             )
             total += 1
 
@@ -626,14 +670,18 @@ class RimWorldTranslator:
                     tag = (row.get("Tag") or "").strip()
                     original_text = row.get("Original Text") or ""
                     translated_text = row.get("Translation") or ""
+                    map_str = row.get("Placeholders") or ""
 
                     if not file_path or not tag:
                         continue
                     if not translated_text.strip():
                         continue
 
+                    original_unmasked = unmask_placeholders(original_text, map_str)
+                    translated_unmasked = unmask_placeholders(translated_text, map_str)
+
                     by_file[file_path].append(
-                        (tag, original_text, translated_text)
+                        (tag, original_unmasked, translated_unmasked)
                     )
                     total_rows += 1
 
