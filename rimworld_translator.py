@@ -74,13 +74,31 @@ BLACKLIST_TAGS = {
     "repaireffect", "worktype", "priority", "overrideminifiedrot",
     "developmentalstagefilter", "destination", "resourcereadoutpriority",
     "price", "hediffskin",
+    # Visual / render tags
+    "colorchannel", "drawposition", "skinshader", "rendertree",
+    "appearance", "linktype", "parent",
+    # AI / behaviour tags
+    "maxdanger", "impactsoundtype", "joykind", "tagtogive",
+    "thinktreemain", "intelligence", "need",
+    "moodrecoverythought", "defaultlocomotion",
+    "alloweddevelopmentalstages", "partnerrace",
+    # Reference / pointer tags
+    "hatcherpawn", "usemeatfrom", "body", "purpose",
+    "savekeysprefix", "harvesttag", "knowledgecategory",
+    "treecategory", "researchprerequisite", "faction",
+    "defaultfactiontype", "defaultbodypart",
+    "warmupeffecter", "addtolist", "worktableroomrole",
+    "allowedspectatorsides", "debuglabelextra", "titlerequired",
     # Coordinate / visual tags
     "volume", "rect", "drawoffset", "dooroffset",
     "texturescale", "minifieddrawoffset", "weapondrawoffset",
 }
 
-BLACKLIST_SUFFIXES = ("class", "path", "def", "defs", "color", "size", "offset")
-BLACKLIST_PREFIXES = ("sound",)
+BLACKLIST_SUFFIXES = (
+    "class", "path", "def", "defs", "color", "size", "offset",
+    "shader", "type", "tag", "channel",
+)
+BLACKLIST_PREFIXES = ("sound", "render", "default")
 
 KNOWN_TEXT_TAGS = {
     "label", "description", "labelnoun", "labelshort",
@@ -127,6 +145,17 @@ KNOWN_ENUM_VALUES = {
     "cont",
     # Body structure enums
     "top", "bottom", "middle", "inside", "outside", "undefined",
+    # Render / visual enums
+    "base", "hair", "skin", "back", "front", "overhead",
+    "cutout", "transparent", "mote", "basic", "advanced",
+    "standard", "super", "humanlike", "sprint",
+    "planks", "smooth", "rough",
+    "slice", "blunt", "bullet", "stab",
+    "gluttonous", "chemical", "idle",
+    "deadly", "some", "great", "extreme",
+    "food", "rest", "joy", "beauty", "comfort",
+    "adult", "child", "baby",
+    "glow",
 }
 
 
@@ -136,23 +165,39 @@ def is_definitely_technical(text):
         return True
     if t.lower() in KNOWN_ENUM_VALUES:
         return True
+    # Pure numbers (int, float, with optional f suffix)
     if re.match(r"^-?\d+([.,]\d+)?f?$", t):
         return True
     if t.lower() in ("true", "false", "null", "none"):
         return True
+    # UUID
     if re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}", t, re.I):
         return True
+    # Namespace (MyMod.MyClass.Method)
     if re.match(r"^[A-Z]\w+(\.[A-Z]\w+)+$", t):
         return True
+    # File path (a/b/c.png)
     if re.match(r"^(\w+[/\\])+\w+(\.\w+)?$", t):
         return True
     if t.startswith("<") or t.startswith("{"):
         return True
-    if re.match(r"^\(-?[\d.]+,\s*-?[\d.]+(?:,\s*-?[\d.]+)*\)$", t):
+    # Coordinate tuples: (0.5, -0.3, 1.0)
+    if re.match(r"^\(?-?[\d.]+,\s*-?[\d.]+(?:,\s*-?[\d.]+)*\)?$", t):
         return True
+    # Hex color
     if re.match(r"^#[0-9a-fA-F]{6,8}$", t):
         return True
+    # Resolution (800x600)
     if re.match(r"^\d+x\d+$", t):
+        return True
+    # Only symbols / punctuation, no letters (◈, ▲, ▼▼, ., ...)
+    if not re.search(r"[A-Za-zА-Яа-яёЁ]", t):
+        return True
+    # DefName-like stubs as descriptions: "YR_AP_SomeItem." or "SomePascalCase."
+    if re.match(r"^[A-Z][A-Za-z0-9]*(_[A-Za-z0-9]+)+\.?$", t):
+        return True
+    # Single PascalCase identifier (no spaces): "Catharsis", "Gunsmithing"
+    if re.match(r"^[A-Z][a-z]+([A-Z][a-z]+)+\d*$", t) and " " not in t:
         return True
     return False
 
@@ -193,10 +238,16 @@ def is_likely_text(text, tag_name):
 
 
 def is_translatable(tag_name, text, known_ids):
-    if is_blacklisted_tag(tag_name):
-        return False
     t = text.strip()
     if not t:
+        return False
+    # KNOWN_TEXT_TAGS always win over blacklist (e.g. beginletterdef)
+    low_tag = tag_name.lower()
+    if low_tag in KNOWN_TEXT_TAGS:
+        if is_definitely_technical(t):
+            return False
+        return True
+    if is_blacklisted_tag(tag_name):
         return False
     if is_definitely_technical(t):
         return False
