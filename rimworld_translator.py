@@ -17,7 +17,7 @@ try:
 except Exception:
     pass
 
-PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_]\w*\}|\[[A-Z_][A-Z_0-9]*\]")
+PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_]\w*\}|\[[A-Za-z_]\w*\]")
 
 
 # ── Placeholder helpers ───────────────────────────────────────────────────────
@@ -61,6 +61,8 @@ BLACKLIST_TAGS = {
     "tickertype", "altitudelayer", "passability", "linkflags",
     "designationcategory", "thingcategory", "shadertype",
     "typeof", "markdef", "wreckeddef",
+    # Slot / backstory / enum-like tags
+    "slot", "backstorycategory", "bodypartgroup", "appliedonfixtags",
     # Enum / code-value tags
     "paramupdatemode", "filterproperty", "capacity", "category",
     "terrainaffordanceneeded", "tradeability", "hediff", "workskill",
@@ -115,9 +117,21 @@ def is_blacklisted_tag(tag_name):
     return False
 
 
+KNOWN_ENUM_VALUES = {
+    "childhood", "adulthood", "male", "female", "none",
+    "industrial", "medieval", "neolithic", "spacer", "ultraspacer",
+    "always", "never", "normal", "rare", "common",
+    "light", "medium", "heavy",
+    "melee", "ranged", "social", "animal", "trade",
+    "cont",
+}
+
+
 def is_definitely_technical(text):
     t = text.strip()
     if not t:
+        return True
+    if t.lower() in KNOWN_ENUM_VALUES:
         return True
     if re.match(r"^-?\d+([.,]\d+)?f?$", t):
         return True
@@ -847,12 +861,13 @@ class RimWorldTranslator:
     def find_xml_files(self, directory):
         xml_files = []
         skip = {".git", ".vs", "bin", "obj", "__pycache__"}
+        skip_files = {"loadfolders.xml", "about.xml", "manifest.xml", "publishedfileid.xml"}
         try:
             for root_dir, dirs, files in os.walk(directory):
                 if any(s in root_dir.lower() for s in skip):
                     continue
                 for f in files:
-                    if f.lower().endswith(".xml"):
+                    if f.lower().endswith(".xml") and f.lower() not in skip_files:
                         xml_files.append(os.path.join(root_dir, f))
         except Exception as e:
             self.log(self.t("xml_search_err", e), "ERROR")
