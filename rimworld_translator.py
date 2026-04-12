@@ -188,8 +188,10 @@ def is_definitely_technical(text):
     # Script arrow syntax: "questDescription->some text"
     if "->" in t and not " " in t.split("->")[0]:
         return True
-    # Coordinate tuples: (0.5, -0.3, 1.0)
+    # Coordinate tuples: (0.5, -0.3, 1.0) and ranges: (.60, Infinity)
     if re.match(r"^\(?-?[\d.]+,\s*-?[\d.]+(?:,\s*-?[\d.]+)*\)?$", t):
+        return True
+    if re.match(r"^\(?-?[\d.]+,\s*-?(?:[\d.]+|Infinity)\)?$", t, re.I):
         return True
     # Hex color
     if re.match(r"^#[0-9a-fA-F]{6,8}$", t):
