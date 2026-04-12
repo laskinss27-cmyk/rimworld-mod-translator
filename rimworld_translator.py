@@ -61,8 +61,9 @@ BLACKLIST_TAGS = {
     "tickertype", "altitudelayer", "passability", "linkflags",
     "designationcategory", "thingcategory", "shadertype",
     "typeof", "markdef", "wreckeddef",
-    # Slot / backstory / enum-like tags
+    # Slot / backstory / body-structure / enum-like tags
     "slot", "backstorycategory", "bodypartgroup", "appliedonfixtags",
+    "height", "depth", "coverage", "groups", "woundanchortag",
     # Enum / code-value tags
     "paramupdatemode", "filterproperty", "capacity", "category",
     "terrainaffordanceneeded", "tradeability", "hediff", "workskill",
@@ -124,6 +125,8 @@ KNOWN_ENUM_VALUES = {
     "light", "medium", "heavy",
     "melee", "ranged", "social", "animal", "trade",
     "cont",
+    # Body structure enums
+    "top", "bottom", "middle", "inside", "outside", "undefined",
 }
 
 
