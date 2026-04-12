@@ -1,140 +1,174 @@
-# RimWorld Mod Translator v2.0
+# RimWorld Mod Translator v3.0
+
+Tool for translating RimWorld mods into any language using Google Sheets and the `GOOGLETRANSLATE` formula.
 
 Инструмент для перевода модов RimWorld на любой язык с помощью Google Sheets и формулы `GOOGLETRANSLATE`.
 
-## Что изменилось в v2.0
+---
 
-Полностью переработан движок определения переводимых строк:
+## Quick Start / Быстрый старт
 
-- **Не нужен белый список тегов.** Программа сама определяет, что переводить, а что нет — по содержимому, а не по имени тега. Работает с любыми модами, включая моды с кастомными тегами.
-- **Перекрёстная проверка defName.** Первый проход собирает все идентификаторы (defName, ссылки на Def'ы). Второй проход использует их, чтобы не перевести техническую ссылку как текст.
-- **Smart Merge.** При повторном экспорте программа подхватывает уже готовые переводы из предыдущего `translations.csv`. Новые строки помечаются как `NEW`, переведённые — `DONE`, удалённые из мода — `UNUSED`.
-- **Колонка Status.** Видно прогресс перевода прямо в таблице.
+1. Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases)
+2. Run it — no Python or dependencies needed
+3. Select the **root folder** of the mod → Export → Translate → Import
 
-## Как программа решает, что переводить
+---
 
-Три слоя анализа, от грубого к точному:
+## ⚠️ Important Notes / Важные замечания
 
-### Слой 1: Чёрный список тегов
-
-Теги, которые **никогда** не содержат текст для перевода:
+### Always point to the mod root folder / Всегда указывайте корневую папку мода
 
 ```
-defName, parentName, thingClass, workerClass, texPath,
-graphicPath, soundDef, shaderType, ...
+✅ Mods/2844129100_yuran_race/
+❌ Mods/2844129100_yuran_race/1.6/Defs/
 ```
 
-А также паттерны: любой тег, заканчивающийся на `Class`, `Path`, `Def`, `Defs`, или начинающийся на `sound`.
+The program recursively scans all subfolders (`1.3/`, `1.4/`, `1.5/`, `Compatibility/`, etc.). If you point to a subfolder, files outside it will be missed.
 
-### Слой 2: Анализ значения
+Программа рекурсивно сканирует все подпапки (`1.3/`, `1.4/`, `1.5/`, `Compatibility/` и т.д.). Если указать подпапку — файлы за её пределами будут пропущены.
 
-Для всех остальных тегов программа смотрит на **содержимое**:
+### Always review the CSV before translating / Всегда проверяйте CSV перед переводом
 
-| Значение | Решение | Причина |
-|----------|---------|---------|
-| `A wooden table for eating.` | ✅ Перевести | Несколько слов, точка в конце |
-| `WoodenTable` | ❌ Пропустить | PascalCase — идентификатор |
-| `Things/Building/Table` | ❌ Пропустить | Путь к файлу |
-| `true` | ❌ Пропустить | Булево значение |
-| `0.85` | ❌ Пропустить | Число |
-| `#FF5500` | ❌ Пропустить | Цвет |
-| `CompProperties_Forbiddable` | ❌ Пропустить | C# класс (PascalCase + underscore) |
-| `Fire` | Зависит | Проверяется по defName'ам и контексту тега |
+The program uses smart heuristics to separate translatable text from technical data, but **no filter is 100% perfect** — especially with mods that use many custom tags.
 
-### Слой 3: Перекрёстная проверка
+Before translating, scan the CSV and check:
+- Are there any numbers, enum values, or code-like strings? → Delete those rows
+- Is there text that looks like an identifier (PascalCase, paths)? → Delete those rows
+- Is there real text that was missed? → Add the tag name to "Extra tags" field and re-export
 
-Перед извлечением текста программа делает первый проход по всем XML-файлам и собирает:
-- Все значения `<defName>` — это технические ID предметов, существ, рецептов
-- Все значения тегов вида `*Def`, `*Defs` — это ссылки на другие Def'ы
-- Все `<li>` элементы, которые выглядят как PascalCase-идентификаторы
+Программа использует эвристики для отделения текста от технических данных, но **ни один фильтр не идеален на 100%** — особенно с модами, которые используют много кастомных тегов.
 
-Если значение найдено в этом списке — оно **не переводится**, даже если выглядит как обычное слово.
+Перед переводом просмотрите CSV и проверьте:
+- Есть ли числа, enum-значения, строки похожие на код? → Удалите эти строки
+- Есть ли текст, похожий на идентификатор (PascalCase, пути)? → Удалите эти строки
+- Есть ли пропущенный текст? → Добавьте имя тега в поле «Доп. теги» и пересканируйте
 
-**Пример:** мод содержит `<defName>Fire</defName>` и `<fuelType>Fire</fuelType>`. Слово «Fire» попало в список идентификаторов → `fuelType` не будет переведён. А `<label>Fire</label>` — будет, потому что `label` — известный текстовый тег.
+### Do not delete the Languages/ folder / Не удаляйте папку Languages/
+
+The `Languages/` folder contains not only translations but also **name lists**, **grammar rules**, and **string files** required by the mod. Deleting it causes errors like `No string files for Name/...` and `Grammar unresolvable`.
+
+Папка `Languages/` содержит не только переводы, но и **списки имён**, **правила грамматики** и **строковые файлы**, необходимые моду. Её удаление вызывает ошибки вида `No string files for Name/...` и `Grammar unresolvable`.
+
+---
+
+## How the filter works / Как работает фильтрация
+
+Three layers of analysis:
+
+### Layer 1: Tag blacklist / Чёрный список тегов
+
+Tags that **never** contain translatable text:
+
+```
+defName, parentName, thingClass, workerClass, texPath, soundDef, shaderType,
+slot, category, capacity, outcome, storeAs, ...
+```
+
+Patterns: any tag ending in `Class`, `Path`, `Def`, `Defs`, `Color`, `Size`, `Offset`, or starting with `sound`.
+
+### Layer 2: Value analysis / Анализ значений
+
+| Value | Decision | Reason |
+|-------|----------|--------|
+| `A wooden table for eating.` | ✅ Translate | Multiple words, ends with period |
+| `WoodenTable` | ❌ Skip | PascalCase — identifier |
+| `Things/Building/Table` | ❌ Skip | File path |
+| `true` / `false` | ❌ Skip | Boolean |
+| `0.85` | ❌ Skip | Number |
+| `#FF5500` | ❌ Skip | Color code |
+| `Childhood` / `Fail` / `Success` | ❌ Skip | Known enum value |
+| `(0.34, 0.5, -0.1)` | ❌ Skip | Coordinate tuple |
+| `$($var * 60200)` | ❌ Skip | Code expression |
+| `Fire` | Depends | Cross-checked against defNames |
+
+### Layer 3: Cross-reference / Перекрёстная проверка
+
+Before extracting text, the program collects all `defName` values and `*Def` references across the mod. If a value matches a known identifier — it is **not translated**, even if it looks like a normal word.
+
+---
 
 ## Workflow
 
-### 1. Экспорт
+### 1. Export / Экспорт
 
-```
-python rimworld_translator.py
-```
+1. Select the **root folder** of the mod
+2. Click "Export to CSV"
+3. **Review the CSV** — remove any false positives
+4. The file `translations.csv` is created next to the program
 
-1. Выберите папку мода
-2. Нажмите «Экспортировать в CSV»
-3. Программа создаст `translations.csv`
+### 2. Translate in Google Sheets / Перевод в Google Sheets
 
-### 2. Перевод в Google Sheets
-
-1. Откройте `translations.csv` в Google Sheets (Файл → Импорт → Загрузить)
-2. Отфильтруйте по колонке **Status** = `NEW` (только непереведённые)
-3. В колонке **Translation** (E) введите формулу:
+1. Open `translations.csv` in Google Sheets (File → Import → Upload)
+2. Filter by **Status** = `NEW`
+3. In the **Translation** column (E), enter the formula:
    ```
    =GOOGLETRANSLATE(D2; "auto"; "ru")
    ```
-4. Протяните формулу на все строки со статусом NEW
-5. Скопируйте колонку Translation → вставьте как **значения** (Ctrl+Shift+V)
-6. Скачайте как CSV (Файл → Скачать → CSV)
+4. Drag the formula to all NEW rows
+5. Copy the Translation column → Paste as **values only** (Ctrl+Shift+V)
+6. Download as CSV (File → Download → CSV)
 
-Поддерживаемые языки: любые, которые поддерживает Google Translate. Замените `"ru"` на нужный код (`"de"`, `"fr"`, `"zh"`, `"ja"`, `"ko"`, `"uk"` и т.д.).
+Supported languages: any supported by Google Translate. Replace `"ru"` with the desired code (`"de"`, `"fr"`, `"zh"`, `"ja"`, `"ko"`, `"uk"`, etc.).
 
-### 3. Импорт
+### 3. Import / Импорт
 
-1. Нажмите «Импортировать перевод»
-2. Выберите переведённый CSV
-3. Программа вставит переводы обратно в XML-файлы мода
+1. Click "Import translation"
+2. Select the translated CSV
+3. The program inserts translations back into the mod's XML files
 
-Строки со статусом `UNUSED` автоматически пропускаются при импорте.
+Rows with status `UNUSED` are automatically skipped during import.
+
+---
 
 ## Smart Merge
 
-При повторном экспорте (например, после обновления мода):
+When re-exporting (e.g., after a mod update):
 
-- **NEW** — новая строка, нужен перевод
-- **DONE** — строка уже была переведена ранее, перевод подставлен автоматически
-- **UNUSED** — строка была в прошлом переводе, но больше не найдена в моде (автор удалил или переименовал). Сохраняется в CSV на случай, если пригодится, но при импорте игнорируется.
+- **NEW** — new string, needs translation
+- **DONE** — already translated, translation is preserved
+- **UNUSED** — was in previous translation but no longer in the mod. Kept in CSV just in case, skipped on import
 
-Это значит: **обновление мода не уничтожает вашу работу.** Переведённые строки сохраняются, переводить нужно только новые.
+**Updating a mod does not destroy your work.** Translated strings are preserved, only new ones need translation.
 
-## Дополнительные теги
+---
 
-Поле «Доп. теги для перевода» позволяет принудительно включить теги, которые программа не распознала как текстовые. Через запятую, например: `customTag, myModLabel`. Используйте только если программа пропустила нужный текст.
+## Extra tags / Дополнительные теги
 
-## Фильтрация технических строк
+The "Extra tags" field lets you force-include tags the program didn't recognize as text. Comma-separated, e.g.: `customTag, myModLabel`. Use only if the program missed translatable text.
 
-Автоматически пропускаются:
-- Числа (`42`, `3.14`, `0.85f`)
-- Булевы значения (`true`, `false`)
-- GUID (`550e8400-e29b-41d4-...`)
-- C# классы и namespaces (`Verse.ThingDef`, `CompProperties_Art`)
-- Файловые пути (`Things/Building/Table`)
-- Цвета (`#FF5500`)
-- Координаты (`(0, 0)`, `128x128`)
-- PascalCase и camelCase идентификаторы
-- Значения, совпадающие с известными defName'ами
+---
 
-## Установка и запуск
+## Placeholders / Плейсхолдеры
 
-### Требования
+The program automatically protects placeholders like `{pawn}`, `{0}`, `[PAWN_nameDef]`, `[PAWN_pronoun]` from being mangled by translation. They are masked before export and restored on import.
 
-- Python 3.6+
-- Tkinter (входит в стандартную поставку Python)
+---
 
-Внешних зависимостей нет.
+## Limitations / Ограничения
 
-### Запуск
+- **Translation quality** depends on Google Translate. For RimWorld context (medieval, sci-fi, specific terminology), machine translation may be inaccurate. Manual review is recommended.
+- **Nested markup** — if a tag contains child elements (`<text>Before <b>war</b></text>`), only the text before the first child is extracted.
+- **DLL strings** — text inside compiled assemblies (.dll) is not extracted.
+- **Edge cases** — single-word values in custom tags may occasionally be included or missed. The "Extra tags" field and manual CSV review solve this.
+
+---
+
+## Installation / Установка
+
+### Option 1: Download exe (recommended)
+
+Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases). No dependencies needed.
+
+### Option 2: Run from source
+
+Requirements: Python 3.6+, Tkinter (included with Python).
 
 ```bash
 python rimworld_translator.py
 ```
 
-## Ограничения
+---
 
-- **Качество перевода** зависит от Google Translate. Для RimWorld-контекста (средневековье, фантастика, специфическая терминология) машинный перевод может быть неточным. Рекомендуется проверять перевод вручную.
-- **Вложенный текст** — если тег содержит дочерние элементы (`<text>До <b>войны</b></text>`), извлекается только текст до первого дочернего элемента.
-- **DLL-строки** — текст внутри скомпилированных сборок (.dll) мода не извлекается. Для этого нужна C# рефлексия.
-- **1% неоднозначных случаев** — однословные значения в кастомных тегах, не совпадающие ни с одним defName, могут быть ошибочно включены или пропущены. Поле «Доп. теги» и ручная проверка CSV решают эту проблему.
-
-## Лицензия
+## License / Лицензия
 
 MIT
