@@ -89,6 +89,8 @@ BLACKLIST_TAGS = {
     "defaultfactiontype", "defaultbodypart",
     "warmupeffecter", "addtolist", "worktableroomrole",
     "allowedspectatorsides", "debuglabelextra", "titlerequired",
+    # Script / quest logic tags
+    "outcome", "storeas", "delayticks", "insigtop",
     # Coordinate / visual tags
     "volume", "rect", "drawoffset", "dooroffset",
     "texturescale", "minifieddrawoffset", "weapondrawoffset",
@@ -156,6 +158,8 @@ KNOWN_ENUM_VALUES = {
     "food", "rest", "joy", "beauty", "comfort",
     "adult", "child", "baby",
     "glow",
+    # Script / quest enums
+    "fail", "success", "laborers",
 }
 
 
@@ -179,7 +183,10 @@ def is_definitely_technical(text):
     # File path (a/b/c.png)
     if re.match(r"^(\w+[/\\])+\w+(\.\w+)?$", t):
         return True
-    if t.startswith("<") or t.startswith("{"):
+    if t.startswith("<") or t.startswith("{") or t.startswith("$"):
+        return True
+    # Script arrow syntax: "questDescription->some text"
+    if "->" in t and not " " in t.split("->")[0]:
         return True
     # Coordinate tuples: (0.5, -0.3, 1.0)
     if re.match(r"^\(?-?[\d.]+,\s*-?[\d.]+(?:,\s*-?[\d.]+)*\)?$", t):
@@ -198,6 +205,9 @@ def is_definitely_technical(text):
         return True
     # Single PascalCase identifier (no spaces): "Catharsis", "Gunsmithing"
     if re.match(r"^[A-Z][a-z]+([A-Z][a-z]+)+\d*$", t) and " " not in t:
+        return True
+    # Code identifiers: YRGroupA, YRgoodwillPenaltyPawn (prefix + camelCase)
+    if re.match(r"^[A-Z]{2,}[a-z]\w*$", t) and " " not in t:
         return True
     return False
 
