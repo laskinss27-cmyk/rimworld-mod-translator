@@ -89,6 +89,9 @@ BLACKLIST_TAGS = {
     "defaultfactiontype", "defaultbodypart",
     "warmupeffecter", "addtolist", "worktableroomrole",
     "allowedspectatorsides", "debuglabelextra", "titlerequired",
+    "storefactionleaderas",
+    # Name tag — almost always technical (render layers, quest vars, etc.)
+    "name",
     # Script / quest logic tags
     "outcome", "storeas", "delayticks", "insigtop",
     "factionrelationkind", "mindanger", "allowedthreats",
@@ -112,7 +115,7 @@ BLACKLIST_PREFIXES = ("sound", "render", "default")
 
 KNOWN_TEXT_TAGS = {
     "label", "description", "labelnoun", "labelshort",
-    "text", "name", "title", "message", "customlabel",
+    "text", "title", "message", "customlabel",
     "tip", "help", "info", "desc", "tooltip",
     "string", "entry", "button", "menu",
     "gerund", "summary", "report", "noun",
