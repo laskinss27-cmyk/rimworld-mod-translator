@@ -971,7 +971,7 @@ class RimWorldTranslator:
 
     def find_xml_files(self, directory):
         xml_files = []
-        skip = {".git", ".vs", "bin", "obj", "__pycache__"}
+        skip = {".git", ".vs", "bin", "obj", "__pycache__", "languages", "patches", "textures", "sounds", "assemblies"}
         skip_files = {"loadfolders.xml", "about.xml", "manifest.xml", "publishedfileid.xml"}
         try:
             for root_dir, dirs, files in os.walk(directory):
