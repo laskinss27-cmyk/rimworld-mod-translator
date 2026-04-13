@@ -91,6 +91,14 @@ BLACKLIST_TAGS = {
     "allowedspectatorsides", "debuglabelextra", "titlerequired",
     # Script / quest logic tags
     "outcome", "storeas", "delayticks", "insigtop",
+    "factionrelationkind", "mindanger", "allowedthreats",
+    "tale", "method",
+    # PawnKind / quality / skill enum tags
+    "itemquality", "quality", "skill", "minexpectation",
+    "rotstage", "tradecurrency", "containerreservationlayer",
+    # Render / rotation / flag tags
+    "offsetmode", "fliponrotation", "hairgender",
+    "relativerotation", "skipflag",
     # Coordinate / visual tags
     "volume", "rect", "drawoffset", "dooroffset",
     "texturescale", "minifieddrawoffset", "weapondrawoffset",
@@ -122,6 +130,10 @@ KNOWN_TEXT_TAGS = {
     "pawscangainroyaltitle",
     "discoveredlettertext", "discoveredlettertitle",
     "successfullyremovedhediffmessage",
+    # Backstory / faction visible text
+    "titleshort", "leadertitle", "pawnsingular", "pawnsplural",
+    "chargenoun", "gizmolable", "verbgizmodesc",
+    "optiontext", "activatelabelstring", "countdownlabel",
 }
 
 
@@ -160,6 +172,26 @@ KNOWN_ENUM_VALUES = {
     "glow",
     # Script / quest enums
     "fail", "success", "laborers",
+    # Direction / side enums (SpectateRectSide etc.)
+    "up", "down", "left", "right", "vertical", "horizontal", "all",
+    "north", "south", "east", "west",
+    "clockwise", "counterclockwise",
+    # Quality / expectation enums
+    "awful", "poor", "good", "excellent", "masterwork", "legendary",
+    "moderate", "noble", "royal",
+    # Faction / threat enums
+    "hostile", "neutral", "ally",
+    "raids", "high", "low", "critical",
+    "free", "standing", "fresh", "rotten",
+    "any", "favor",
+    # Misc enums
+    "finish", "reverse", "empty", "full",
+    "shooting", "construction", "mining", "cooking",
+    "growing", "crafting", "hunting", "research",
+    "medicine", "artistic", "plants", "animals",
+    "intellectual", "social",
+    "beard", "raid",
+    "ultratech", "midworld", "glitterworld",
 }
 
 
@@ -256,7 +288,20 @@ def is_translatable(tag_name, text, known_ids):
     # KNOWN_TEXT_TAGS always win over blacklist (e.g. beginletterdef)
     low_tag = tag_name.lower()
     if low_tag in KNOWN_TEXT_TAGS:
-        if is_definitely_technical(t):
+        # For known text tags, only skip hard-technical values
+        # (numbers, booleans, paths, UUIDs etc.) but NOT enum words
+        # because "Finish", "Reverse" etc. are valid button labels
+        if not t:
+            return False
+        if re.match(r"^-?\d+([.,]\d+)?f?$", t):
+            return False
+        if t.lower() in ("true", "false", "null", "none"):
+            return False
+        if re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}", t, re.I):
+            return False
+        if re.match(r"^(\w+[/\\])+\w+(\.\w+)?$", t):
+            return False
+        if t.startswith("<") or t.startswith("$"):
             return False
         return True
     if is_blacklisted_tag(tag_name):
