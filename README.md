@@ -1,8 +1,29 @@
-# RimWorld Mod Translator v3.0
+# RimWorld Mod Translator
 
-Tool for translating RimWorld mods into any language using Google Sheets and the `GOOGLETRANSLATE` formula.
+**Перевод любого мода RimWorld на любой язык за 5 минут — без Python, без знания XML, бесплатно.**
 
-Инструмент для перевода модов RimWorld на любой язык с помощью Google Sheets и формулы `GOOGLETRANSLATE`.
+**Translate any RimWorld mod into any language in 5 minutes — no Python, no XML knowledge, free.**
+
+![platform](https://img.shields.io/badge/platform-Windows-blue) ![python](https://img.shields.io/badge/python-3.6%2B-yellow) ![license](https://img.shields.io/badge/license-MIT-green) ![release](https://img.shields.io/github/v/release/laskinss27-cmyk/rimworld-mod-translator)
+
+---
+
+## Зачем это / Why
+
+В RimWorld тысячи модов, и большинство из них только на английском. Ручной перевод XML — это часы работы и риск сломать мод одной опечаткой в теге. Утилита вытаскивает только переводимый текст в CSV, ты переводишь его в Google Sheets одной формулой, импортируешь обратно — и мод заговорил на нужном языке.
+
+RimWorld has thousands of mods, most of them English-only. Hand-editing XML takes hours and one wrong tag breaks the mod. This tool extracts only the translatable strings into a CSV, you translate them in Google Sheets with one formula, import back — and the mod speaks your language.
+
+---
+
+## Что внутри / Features
+
+- **Умная фильтрация** — три слоя анализа отделяют живой текст от `defName`, путей, чисел, enum'ов и кастомных идентификаторов. На большинстве модов работает «из коробки».
+- **Smart Merge** — обновил мод? Старые переводы сохраняются, нужно перевести только новое. Старое не теряется.
+- **Защита плейсхолдеров** — `{pawn}`, `[PAWN_nameDef]` и подобные не ломаются переводчиком, маскируются и автоматически восстанавливаются при импорте.
+- **Перекрёстная проверка defName** — технические идентификаторы, которые случайно похожи на слова (`Fire`, `Wood`), не переводятся.
+- **EN / RU интерфейс** с тёмной темой.
+- **Standalone EXE** — Python не нужен. Один файл, запустил, работаешь.
 
 ---
 
