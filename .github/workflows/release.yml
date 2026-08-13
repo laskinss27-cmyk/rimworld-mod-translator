@@ -1,0 +1,65 @@
+name: Build Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build dependency
+        run: python -m pip install pyinstaller==6.16.0
+
+      - name: Run tests
+        run: python -m unittest -v
+
+      - name: Build standalone application
+        run: >-
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name RimWorldTranslator
+          rimworld_translator.py
+
+      - name: Create checksum
+        shell: pwsh
+        run: |
+          $hash = (Get-FileHash "dist/RimWorldTranslator.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  RimWorldTranslator.exe" | Set-Content "dist/RimWorldTranslator.exe.sha256" -Encoding utf8
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: RimWorldTranslator-Windows
+          path: |
+            dist/RimWorldTranslator.exe
+            dist/RimWorldTranslator.exe.sha256
+          if-no-files-found: error
+
+      - name: Upload files to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload "${{ github.ref_name }}"
+          "dist/RimWorldTranslator.exe"
+          "dist/RimWorldTranslator.exe.sha256"
+          --clobber

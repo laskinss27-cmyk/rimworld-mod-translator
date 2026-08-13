@@ -20,7 +20,9 @@ RimWorld has thousands of mods, most of them English-only. Hand-editing XML take
 
 - **Умная фильтрация** — три слоя анализа отделяют живой текст от `defName`, путей, чисел, enum'ов и кастомных идентификаторов. На большинстве модов работает «из коробки».
 - **Smart Merge** — обновил мод? Старые переводы сохраняются, нужно перевести только новое. Старое не теряется.
-- **Защита плейсхолдеров** — `{pawn}`, `[PAWN_nameDef]` и подобные не ломаются переводчиком, маскируются и автоматически восстанавливаются при импорте.
+- **Безопасный мод-перевод** — создаёт отдельный мод с `Languages/<язык>/DefInjected` и `Keyed`, не изменяя оригинальный Workshop-мод.
+- **Защита плейсхолдеров** — `{0}`, `{pawn}`, `{PAWN_gender ? his : her}`, `[PAWN_nameDef]` и подобные маскируются и проверяются перед сборкой.
+- **Резервные копии** — старый режим изменения оригинальных XML автоматически сохраняет копии файлов.
 - **Перекрёстная проверка defName** — технические идентификаторы, которые случайно похожи на слова (`Fire`, `Wood`), не переводятся.
 - **EN / RU интерфейс** с тёмной темой.
 - **Standalone EXE** — Python не нужен. Один файл, запустил, работаешь.
@@ -31,7 +33,23 @@ RimWorld has thousands of mods, most of them English-only. Hand-editing XML take
 
 1. Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases)
 2. Run it — no Python or dependencies needed
-3. Select the **root folder** of the mod → Export → Translate → Import
+3. Select the **root folder** of the mod → Export → Translate → **Build translation mod**
+
+Рекомендуемый порядок: выбрать корневую папку мода → экспортировать CSV → перевести столбец `Translation` → нажать **«Создать мод-перевод»**. Программа попросит имя папки языка (`Russian`), версию RimWorld (`1.6`) и каталог для результата.
+
+The recommended workflow is: select the mod root → export CSV → translate the `Translation` column → click **Build translation mod**. The app asks for the RimWorld language folder (`Russian`), game version (`1.6`), and output directory.
+
+The generated package contains:
+
+```text
+OriginalMod_Russian_Translation/
+├── About/About.xml
+├── Languages/Russian/DefInjected/...
+├── Languages/Russian/Keyed/...
+└── Generation report.txt
+```
+
+`About.xml` declares the original mod as a dependency and places the translation after it in load order. The source mod is never rewritten by this mode.
 
 ---
 
@@ -63,6 +81,19 @@ Before translating, scan the CSV and check:
 - Есть ли числа, enum-значения, строки похожие на код? → Удалите эти строки
 - Есть ли текст, похожий на идентификатор (PascalCase, пути)? → Удалите эти строки
 - Есть ли пропущенный текст? → Добавьте имя тега в поле «Доп. теги» и пересканируйте
+
+### Safe mode limitations / Ограничения безопасного режима
+
+- Для сборки выбирается одна версия RimWorld; строки папок других версий пропускаются.
+- Строки внутри DLL и XML-патчей автоматически не локализуются.
+- Абстрактные Def без `defName` и нестандартные списки могут потребовать ручной проверки. Все такие случаи записываются в `Generation report.txt`.
+- Строка с потерянным или изменённым плейсхолдером не добавляется в готовый мод.
+
+The safe builder targets one RimWorld version. DLL strings, XML patches, abstract Defs without `defName`, and unusual custom list loaders may require manual work. Every skipped or ambiguous entry is written to `Generation report.txt`.
+
+### Editing the original mod / Изменение оригинального мода
+
+Кнопка **«Изменить оригинал»** оставлена для совместимости. Перед записью программа создаёт копии затронутых XML в `RimWorldTranslator_Backups/<дата-время>/`. Обновление Steam Workshop всё равно заменит изменённые файлы, поэтому для обычного использования рекомендуется отдельный мод-перевод.
 
 ### Do not delete the Languages/ folder / Не удаляйте папку Languages/
 
@@ -131,13 +162,15 @@ Before extracting text, the program collects all `defName` values and `*Def` ref
 
 Supported languages: any supported by Google Translate. Replace `"ru"` with the desired code (`"de"`, `"fr"`, `"zh"`, `"ja"`, `"ko"`, `"uk"`, etc.).
 
-### 3. Import / Импорт
+### 3. Build / Сборка
 
-1. Click "Import translation"
+1. Click **Build translation mod / Создать мод-перевод**
 2. Select the translated CSV
-3. The program inserts translations back into the mod's XML files
+3. Enter the RimWorld language folder and target game version
+4. Select an output folder
+5. Enable the generated translation after the original mod in RimWorld
 
-Rows with status `UNUSED` are automatically skipped during import.
+Rows with status `UNUSED` are automatically skipped. **Edit original / Изменить оригинал** is a legacy fallback with automatic backups.
 
 ---
 

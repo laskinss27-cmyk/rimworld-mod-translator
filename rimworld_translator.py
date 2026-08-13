@@ -1,14 +1,15 @@
 import os
 import subprocess
 import platform
+import shutil
 import xml.etree.ElementTree as ET
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, simpledialog
 from datetime import datetime
 import re
 import json
 import csv
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 # ── DPI awareness (Windows) ───────────────────────────────────────────────────
 try:
@@ -17,7 +18,7 @@ try:
 except Exception:
     pass
 
-PLACEHOLDER_RE = re.compile(r"\{[A-Za-z_]\w*\}|\[[A-Za-z_]\w*\]")
+PLACEHOLDER_RE = re.compile(r"\{[^{}\r\n]+\}|\[[A-Za-z_]\w*\]")
 
 
 # ── Placeholder helpers ───────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ def mask_placeholders(text):
     mapping = {}
     for i, h in enumerate(holders):
         if h not in mapping:
-            mapping[h] = f"{{{i}}}"
+            mapping[h] = f"__RWPH_{i}__"
     masked = text
     for original, token in mapping.items():
         masked = masked.replace(original, token)
@@ -357,11 +358,384 @@ def load_existing_translations(csv_path):
                 file_path = (row.get("File") or "").strip()
                 original = row.get("Original Text") or ""
                 translation = row.get("Translation") or ""
+                placeholder_map = row.get("Placeholders") or ""
+                original = unmask_placeholders(original, placeholder_map)
+                translation = unmask_placeholders(translation, placeholder_map)
                 if file_path and original and translation.strip():
                     translations[(file_path, original)] = translation
     except Exception:
         pass
     return translations
+
+
+def safe_join(root_dir, relative_path):
+    """Join an untrusted CSV path without allowing it to escape the mod root."""
+    root_abs = os.path.abspath(root_dir)
+    candidate = os.path.abspath(os.path.join(root_abs, relative_path))
+    try:
+        common = os.path.commonpath([root_abs, candidate])
+    except ValueError:
+        raise ValueError("Path is outside the selected mod folder: " + relative_path)
+    if os.path.normcase(common) != os.path.normcase(root_abs):
+        raise ValueError("Path is outside the selected mod folder: " + relative_path)
+    return candidate
+
+
+def split_relative_path(path):
+    return [part for part in re.split(r"[\\/]+", path) if part and part != "."]
+
+
+def path_game_version(path):
+    for part in split_relative_path(path):
+        if re.match(r"^\d+\.\d+$", part):
+            return part
+    return None
+
+
+def sanitize_component(value, fallback="Translation"):
+    cleaned = re.sub(r"[^\w.()\- ]+", "_", (value or "").strip(), flags=re.UNICODE)
+    cleaned = cleaned.strip(" ._")
+    return cleaned or fallback
+
+
+def package_suffix(value):
+    cleaned = re.sub(r"[^a-z0-9]+", "", (value or "").lower())
+    return cleaned or "translation"
+
+
+def extract_placeholders(text):
+    return Counter(PLACEHOLDER_RE.findall(text or ""))
+
+
+def load_translation_rows(csv_path):
+    """Load translated CSV rows while preserving compatibility with older exports."""
+    rows = []
+    with open(csv_path, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            if (row.get("Status") or "").strip().upper() == "UNUSED":
+                continue
+            file_path = (row.get("File") or "").strip()
+            tag = (row.get("Tag") or "").strip()
+            original = row.get("Original Text") or ""
+            translation = row.get("Translation") or ""
+            placeholder_map = row.get("Placeholders") or ""
+            if not file_path or not tag or not translation.strip():
+                continue
+            original = unmask_placeholders(original, placeholder_map)
+            translation = unmask_placeholders(translation, placeholder_map)
+            rows.append({
+                "file": file_path,
+                "tag": tag,
+                "original": original,
+                "translation": translation,
+            })
+    return rows
+
+
+def read_mod_metadata(mod_root):
+    metadata = {
+        "name": os.path.basename(os.path.abspath(mod_root)),
+        "package_id": "",
+        "versions": [],
+    }
+    about_path = os.path.join(mod_root, "About", "About.xml")
+    if not os.path.exists(about_path):
+        return metadata
+    try:
+        root = ET.parse(about_path).getroot()
+        name = root.findtext("name")
+        package_id = root.findtext("packageId")
+        if name and name.strip():
+            metadata["name"] = name.strip()
+        if package_id and package_id.strip():
+            metadata["package_id"] = package_id.strip()
+        versions = root.find("supportedVersions")
+        if versions is not None:
+            metadata["versions"] = [
+                item.text.strip() for item in versions
+                if item.text and item.text.strip()
+            ]
+    except (ET.ParseError, OSError):
+        pass
+    return metadata
+
+
+def _direct_child_text(element, tag_name):
+    for child in element:
+        if isinstance(child.tag, str) and child.tag == tag_name:
+            return (child.text or "").strip()
+    return ""
+
+
+def iter_def_translation_targets(xml_file):
+    """Return concrete Def text nodes and their best-effort DefInjected keys."""
+    tree = ET.parse(xml_file)
+    root = tree.getroot()
+    if not isinstance(root.tag, str) or root.tag.lower() != "defs":
+        return [], ["Root element is not <Defs>"]
+
+    targets = []
+    warnings = []
+
+    def walk(parent, def_type, def_name, path):
+        li_index = 0
+        tag_counts = Counter(
+            child.tag for child in parent
+            if isinstance(child.tag, str) and child.tag != "li"
+        )
+        seen_tags = Counter()
+        for child in parent:
+            if not isinstance(child.tag, str):
+                continue
+            tag = child.tag
+            if tag == "defName" and not path:
+                continue
+            if tag == "li":
+                segment = str(li_index)
+                li_index += 1
+            else:
+                segment = tag
+                if tag_counts[tag] > 1:
+                    warnings.append(
+                        "Repeated non-list tag may need manual review: "
+                        + def_name + "." + ".".join(path + [tag])
+                    )
+                seen_tags[tag] += 1
+            new_path = path + [segment]
+            text = (child.text or "").strip()
+            if text:
+                targets.append({
+                    "tag": tag,
+                    "original": text,
+                    "def_type": def_type,
+                    "def_name": def_name,
+                    "key": def_name + "." + ".".join(new_path),
+                    "uses_list_index": tag == "li" or any(p.isdigit() for p in new_path),
+                })
+            if len(child):
+                walk(child, def_type, def_name, new_path)
+
+    for def_element in root:
+        if not isinstance(def_element.tag, str):
+            continue
+        def_name = _direct_child_text(def_element, "defName")
+        if not def_name:
+            abstract_name = (def_element.get("Name") or "").strip()
+            label = abstract_name or def_element.tag
+            warnings.append("Skipped abstract or unnamed Def: " + label)
+            continue
+        walk(def_element, def_element.tag, def_name, [])
+
+    return targets, warnings
+
+
+def is_english_keyed_path(relative_path):
+    parts = [part.lower() for part in split_relative_path(relative_path)]
+    for index in range(len(parts) - 2):
+        if parts[index:index + 3] == ["languages", "english", "keyed"]:
+            return True
+    return False
+
+
+def keyed_output_relative_path(relative_path):
+    parts = split_relative_path(relative_path)
+    lowered = [part.lower() for part in parts]
+    for index in range(len(parts) - 2):
+        if lowered[index:index + 3] == ["languages", "english", "keyed"]:
+            tail = parts[index + 3:]
+            return os.path.join(*tail) if tail else "Keyed.xml"
+    return os.path.basename(relative_path)
+
+
+def defs_output_relative_path(relative_path, def_type):
+    parts = split_relative_path(relative_path)
+    lowered = [part.lower() for part in parts]
+    try:
+        defs_index = lowered.index("defs")
+        tail = parts[defs_index + 1:]
+    except ValueError:
+        tail = [os.path.basename(relative_path)]
+    if not tail:
+        tail = ["Generated.xml"]
+    return os.path.join("DefInjected", sanitize_component(def_type), *tail)
+
+
+def indent_element(element, level=0):
+    indentation = "\n" + "  " * level
+    if len(element):
+        if not element.text or not element.text.strip():
+            element.text = indentation + "  "
+        for child in element:
+            indent_element(child, level + 1)
+        if not element[-1].tail or not element[-1].tail.strip():
+            element[-1].tail = indentation
+    if level and (not element.tail or not element.tail.strip()):
+        element.tail = indentation
+
+
+def atomic_write_xml(path, root):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    indent_element(root)
+    temporary = path + ".tmp"
+    with open(temporary, "w", encoding="utf-8", newline="\n") as f:
+        f.write('<?xml version="1.0" encoding="UTF-8"?>\n')
+        ET.ElementTree(root).write(f, encoding="unicode", short_empty_elements=False)
+        f.write("\n")
+    os.replace(temporary, path)
+
+
+def build_translation_package(mod_root, csv_path, output_root, language_folder,
+                              game_version):
+    """Create a separate RimWorld translation mod without editing the source mod."""
+    rows = load_translation_rows(csv_path)
+    rows_by_file = defaultdict(list)
+    for row in rows:
+        version = path_game_version(row["file"])
+        if version and game_version and version != game_version:
+            continue
+        rows_by_file[row["file"]].append(row)
+
+    metadata = read_mod_metadata(mod_root)
+    warnings = []
+    invalid_placeholders = 0
+    unmatched = 0
+    generated_entries = 0
+    groups = defaultdict(dict)
+
+    ordered_files = sorted(
+        rows_by_file.items(),
+        key=lambda item: (
+            1 if path_game_version(item[0]) else 0,
+            item[0].lower(),
+        ),
+    )
+    for relative_path, file_rows in ordered_files:
+        try:
+            source_path = safe_join(mod_root, relative_path)
+        except ValueError as exc:
+            warnings.append(str(exc))
+            unmatched += len(file_rows)
+            continue
+        if not os.path.exists(source_path):
+            warnings.append("Source file not found: " + relative_path)
+            unmatched += len(file_rows)
+            continue
+
+        pending = defaultdict(list)
+        for row in file_rows:
+            pending[(row["tag"], row["original"])].append(row)
+
+        if is_english_keyed_path(relative_path):
+            try:
+                root = ET.parse(source_path).getroot()
+            except (ET.ParseError, OSError) as exc:
+                warnings.append("Could not parse Keyed file " + relative_path + ": " + str(exc))
+                unmatched += len(file_rows)
+                continue
+            output_rel = os.path.join("Keyed", keyed_output_relative_path(relative_path))
+            group_key = ("keyed", output_rel)
+            for element in root:
+                if not isinstance(element.tag, str) or not element.text:
+                    continue
+                key = (element.tag, element.text.strip())
+                if not pending[key]:
+                    continue
+                row = pending[key].pop(0)
+                if extract_placeholders(row["original"]) != extract_placeholders(row["translation"]):
+                    warnings.append("Placeholder mismatch: " + relative_path + " :: " + element.tag)
+                    invalid_placeholders += 1
+                    continue
+                groups[group_key][element.tag] = (row["original"], row["translation"])
+                generated_entries += 1
+        else:
+            try:
+                targets, target_warnings = iter_def_translation_targets(source_path)
+            except (ET.ParseError, OSError) as exc:
+                warnings.append("Could not parse Def file " + relative_path + ": " + str(exc))
+                unmatched += len(file_rows)
+                continue
+            warnings.extend(relative_path + ": " + item for item in target_warnings)
+            for target in targets:
+                key = (target["tag"], target["original"])
+                if not pending[key]:
+                    continue
+                row = pending[key].pop(0)
+                if extract_placeholders(row["original"]) != extract_placeholders(row["translation"]):
+                    warnings.append("Placeholder mismatch: " + relative_path + " :: " + target["key"])
+                    invalid_placeholders += 1
+                    continue
+                output_rel = defs_output_relative_path(relative_path, target["def_type"])
+                group_key = ("def", output_rel)
+                if target["key"] in groups[group_key]:
+                    warnings.append("Duplicate DefInjected key, last value used: " + target["key"])
+                groups[group_key][target["key"]] = (row["original"], row["translation"])
+                generated_entries += 1
+
+        unmatched += sum(len(items) for items in pending.values())
+
+    generated_entries = sum(len(entries) for entries in groups.values())
+    language_root = os.path.join(output_root, "Languages", language_folder)
+    for (_, relative_output), entries in groups.items():
+        output_path = os.path.join(language_root, relative_output)
+        language_data = ET.Element("LanguageData")
+        for key, (original, translation) in sorted(entries.items()):
+            language_data.append(ET.Comment(" EN: " + original.replace("--", "—") + " "))
+            node = ET.SubElement(language_data, key)
+            node.text = translation
+        atomic_write_xml(output_path, language_data)
+
+    about = ET.Element("ModMetaData")
+    name = metadata["name"] + " — " + language_folder + " translation"
+    ET.SubElement(about, "name").text = name
+    ET.SubElement(about, "author").text = "Generated with RimWorld Mod Translator"
+    original_package = metadata["package_id"]
+    if original_package:
+        translated_package = original_package + ".translation." + package_suffix(language_folder)
+    else:
+        translated_package = "local." + package_suffix(metadata["name"]) + ".translation." + package_suffix(language_folder)
+        warnings.append("Original About.xml has no packageId; dependency must be checked manually.")
+    ET.SubElement(about, "packageId").text = translated_package
+    supported = ET.SubElement(about, "supportedVersions")
+    ET.SubElement(supported, "li").text = game_version or (
+        metadata["versions"][-1] if metadata["versions"] else "1.6"
+    )
+    if original_package:
+        dependencies = ET.SubElement(about, "modDependencies")
+        dependency = ET.SubElement(dependencies, "li")
+        ET.SubElement(dependency, "packageId").text = original_package
+        ET.SubElement(dependency, "displayName").text = metadata["name"]
+        load_after = ET.SubElement(about, "loadAfter")
+        ET.SubElement(load_after, "li").text = original_package
+    ET.SubElement(about, "description").text = (
+        language_folder + " translation for " + metadata["name"]
+        + ". Generated as a separate mod; the original mod is not modified."
+    )
+    atomic_write_xml(os.path.join(output_root, "About", "About.xml"), about)
+
+    report_path = os.path.join(output_root, "Generation report.txt")
+    os.makedirs(output_root, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8", newline="\n") as report:
+        report.write("RimWorld Mod Translator — safe translation package\n")
+        report.write("Source mod: " + metadata["name"] + "\n")
+        report.write("Target language folder: " + language_folder + "\n")
+        report.write("Target RimWorld version: " + (game_version or "auto") + "\n")
+        report.write("Generated entries: " + str(generated_entries) + "\n")
+        report.write("Unmatched CSV rows: " + str(unmatched) + "\n")
+        report.write("Placeholder mismatches skipped: " + str(invalid_placeholders) + "\n")
+        if warnings:
+            report.write("\nWarnings:\n")
+            for warning in warnings:
+                report.write("- " + warning + "\n")
+
+    return {
+        "entries": generated_entries,
+        "files": len(groups),
+        "unmatched": unmatched,
+        "placeholder_mismatches": invalid_placeholders,
+        "warnings": warnings,
+        "output": output_root,
+    }
 
 
 # ── Color Palette ─────────────────────────────────────────────────────────────
@@ -394,7 +768,8 @@ STRINGS = {
         "browse":            "Обзор…",
         "extra_tags":        "Доп. теги (через запятую)",
         "export":            "Экспорт в CSV",
-        "import_":           "Импорт перевода",
+        "build_mod":         "Создать мод-перевод",
+        "import_":           "Изменить оригинал",
         "save_cfg":          "Настройки",
         "clear":             "Очистить",
         "copy":              "Копировать",
@@ -457,6 +832,14 @@ STRINGS = {
             "Применено переводов: {applied}"
         ),
         "import_err_status": "Ошибка при импорте",
+        "target_language":   "Имя папки языка RimWorld (например, Russian)",
+        "target_version":    "Версия RimWorld для перевода (например, 1.6)",
+        "choose_output":     "Куда сохранить отдельный мод-перевод",
+        "build_started":     "Создание отдельного мода-перевода…",
+        "build_done":        "Мод-перевод создан!\nПапка: {output}\nФайлов: {files}\nСтрок: {entries}\nНе сопоставлено: {unmatched}",
+        "build_err_status":  "Ошибка создания мода-перевода",
+        "backup_created":    "Резервная копия оригинальных XML: {0}",
+        "legacy_warning":    "Этот режим изменит XML оригинального мода. Перед изменением будет создана резервная копия. Продолжить?",
         "parse_err":         "Ошибка парсинга: {0}: {1}",
         "read_err":          "Ошибка чтения: {0}: {1}",
         "xml_search_err":    "Ошибка поиска XML: {0}",
@@ -468,7 +851,8 @@ STRINGS = {
         "browse":            "Browse…",
         "extra_tags":        "Extra tags (comma-separated)",
         "export":            "Export to CSV",
-        "import_":           "Import translation",
+        "build_mod":         "Build translation mod",
+        "import_":           "Edit original",
         "save_cfg":          "Settings",
         "clear":             "Clear",
         "copy":              "Copy",
@@ -531,6 +915,14 @@ STRINGS = {
             "Translations applied: {applied}"
         ),
         "import_err_status": "Import error",
+        "target_language":   "RimWorld language folder name (for example, Russian)",
+        "target_version":    "Target RimWorld version (for example, 1.6)",
+        "choose_output":     "Choose where to save the separate translation mod",
+        "build_started":     "Building separate translation mod…",
+        "build_done":        "Translation mod created!\nFolder: {output}\nFiles: {files}\nEntries: {entries}\nUnmatched: {unmatched}",
+        "build_err_status":  "Translation mod build error",
+        "backup_created":    "Original XML backup: {0}",
+        "legacy_warning":    "This mode edits the original mod XML. A backup will be created first. Continue?",
         "parse_err":         "Parse error: {0}: {1}",
         "read_err":          "Read error: {0}: {1}",
         "xml_search_err":    "XML search error: {0}",
@@ -781,9 +1173,14 @@ class RimWorldTranslator:
         )
         self._btn_export.pack(side=tk.LEFT, padx=(0, 8))
 
+        self._btn_build = ttk.Button(
+            actions, text=s["build_mod"],
+            style="Accent.TButton", command=self.build_translation_mod,
+        )
+        self._btn_build.pack(side=tk.LEFT, padx=(0, 8))
+
         self._btn_import = ttk.Button(
-            actions, text=s["import_"],
-            style="Accent.TButton", command=self.import_translation,
+            actions, text=s["import_"], command=self.import_translation,
         )
         self._btn_import.pack(side=tk.LEFT, padx=(0, 8))
 
@@ -880,6 +1277,7 @@ class RimWorldTranslator:
         self._btn_browse.config(text=s["browse"])
         self._lbl_tags.config(text=s["extra_tags"])
         self._btn_export.config(text=s["export"])
+        self._btn_build.config(text=s["build_mod"])
         self._btn_import.config(text=s["import_"])
         self._btn_save.config(text=s["save_cfg"])
         self._lbl_log.config(text=s["log_title"])
@@ -974,11 +1372,22 @@ class RimWorldTranslator:
 
     def find_xml_files(self, directory):
         xml_files = []
-        skip = {".git", ".vs", "bin", "obj", "__pycache__", "languages", "patches", "textures", "sounds", "assemblies"}
+        skip = {".git", ".vs", "bin", "obj", "__pycache__", "patches",
+                "textures", "sounds", "assemblies", "rimworldtranslator_backups"}
         skip_files = {"loadfolders.xml", "about.xml", "manifest.xml", "publishedfileid.xml"}
         try:
             for root_dir, dirs, files in os.walk(directory):
-                if any(s in root_dir.lower() for s in skip):
+                rel_parts = [part.lower() for part in split_relative_path(
+                    os.path.relpath(root_dir, directory)
+                )]
+                in_languages = "languages" in rel_parts
+                in_english_keyed = any(
+                    rel_parts[index:index + 3] == ["languages", "english", "keyed"]
+                    for index in range(max(0, len(rel_parts) - 2))
+                )
+                if any(part in skip for part in rel_parts):
+                    continue
+                if in_languages and not in_english_keyed:
                     continue
                 for f in files:
                     if f.lower().endswith(".xml") and f.lower() not in skip_files:
@@ -1120,8 +1529,11 @@ class RimWorldTranslator:
             tag_name = elem.tag
             text = elem.text.strip()
             forced = tag_name.lower() in force_tags
+            keyed_text = is_english_keyed_path(relative_path) and elem is not root
 
-            if forced and not is_definitely_technical(text):
+            if keyed_text:
+                pass
+            elif forced and not is_definitely_technical(text):
                 pass
             elif not is_translatable(tag_name, text, known_ids):
                 continue
@@ -1148,11 +1560,89 @@ class RimWorldTranslator:
 
         return total, new, merged
 
+    # ── Safe translation mod build ──────────────────────────────────────────
+
+    def build_translation_mod(self):
+        if not self.source_dir.get() or not os.path.exists(self.source_dir.get()):
+            messagebox.showerror("", self.t("need_folder"))
+            return
+
+        csv_file = filedialog.askopenfilename(
+            title=self.t("choose_csv"),
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not csv_file:
+            return
+
+        metadata = read_mod_metadata(self.source_dir.get())
+        default_version = metadata["versions"][-1] if metadata["versions"] else "1.6"
+        language_folder = simpledialog.askstring(
+            self.t("build_mod"), self.t("target_language"),
+            initialvalue="Russian", parent=self.root,
+        )
+        if not language_folder:
+            return
+        language_folder = sanitize_component(language_folder, "Russian")
+
+        game_version = simpledialog.askstring(
+            self.t("build_mod"), self.t("target_version"),
+            initialvalue=default_version, parent=self.root,
+        )
+        if not game_version:
+            return
+        game_version = game_version.strip()
+        if not re.match(r"^\d+\.\d+$", game_version):
+            messagebox.showerror("", self.t("target_version"))
+            return
+
+        output_parent = filedialog.askdirectory(title=self.t("choose_output"))
+        if not output_parent:
+            return
+        folder_name = (
+            sanitize_component(metadata["name"]) + "_"
+            + sanitize_component(language_folder) + "_Translation"
+        )
+        output_root = os.path.join(output_parent, folder_name)
+        if os.path.exists(output_root):
+            output_root += "_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+
+        self.clear_log()
+        self.status_var.set(self.t("build_started"))
+        self.log(self.t("build_started"))
+        self.update_progress(20)
+        try:
+            result = build_translation_package(
+                self.source_dir.get(), csv_file, output_root,
+                language_folder, game_version,
+            )
+            self.update_progress(100)
+            self.log(self.t("saved_to", output_root), "SUCCESS")
+            self.log(self.t("total_rows", result["entries"]), "SUCCESS")
+            if result["unmatched"]:
+                self.log(self.t("not_applied", result["unmatched"]), "WARNING")
+            for warning in result["warnings"][:50]:
+                self.log(warning, "WARNING")
+            if len(result["warnings"]) > 50:
+                self.log("Additional warnings are in Generation report.txt", "WARNING")
+            self.status_var.set(self.t("done_imp", result["files"], result["entries"]))
+            messagebox.showinfo(
+                self.t("done_title"),
+                self.t("build_done", **result),
+            )
+        except Exception as exc:
+            self.log(self.t("critical", exc), "ERROR")
+            self.status_var.set(self.t("build_err_status"))
+            messagebox.showerror("", str(exc))
+        finally:
+            self.update_progress(0)
+
     # ── Import ────────────────────────────────────────────────────────────────
 
     def import_translation(self):
         if not self.source_dir.get() or not os.path.exists(self.source_dir.get()):
             messagebox.showerror("", self.t("need_folder"))
+            return
+        if not messagebox.askyesno(self.t("import_"), self.t("legacy_warning")):
             return
 
         csv_file = filedialog.askopenfilename(
@@ -1203,14 +1693,26 @@ class RimWorldTranslator:
 
             updated_files = applied_units = skipped_units = 0
             items_list = list(by_file.items())
+            backup_root = os.path.join(
+                self.source_dir.get(), "RimWorldTranslator_Backups",
+                datetime.now().strftime("%Y%m%d_%H%M%S"),
+            )
 
             for i, (fp, items) in enumerate(items_list):
-                full_path = os.path.join(self.source_dir.get(), fp)
+                try:
+                    full_path = safe_join(self.source_dir.get(), fp)
+                except ValueError as exc:
+                    self.log(str(exc), "ERROR")
+                    skipped_units += len(items)
+                    continue
                 if not os.path.exists(full_path):
                     self.log(self.t("file_not_found", fp), "WARNING")
                     skipped_units += len(items)
                     continue
                 try:
+                    backup_path = safe_join(backup_root, fp)
+                    os.makedirs(os.path.dirname(backup_path), exist_ok=True)
+                    shutil.copy2(full_path, backup_path)
                     applied, skipped = self.apply_translations_to_file(full_path, items)
                     applied_units += applied
                     skipped_units += skipped
@@ -1223,6 +1725,9 @@ class RimWorldTranslator:
 
                 self.update_progress((i + 1) / len(items_list) * 100)
                 self.status_var.set(self.t("files_progress", i + 1, len(items_list)))
+
+            if os.path.exists(backup_root):
+                self.log(self.t("backup_created", backup_root), "SUCCESS")
 
             self.log("—" * 40)
             self.log(self.t("import_done", updated_files, applied_units), "SUCCESS")
