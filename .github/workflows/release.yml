@@ -1,9 +1,11 @@
-name: Build Windows release
+name: Build Qt edition
 
 on:
   push:
+    branches:
+      - qt-modern
     tags:
-      - "v*"
+      - "qt-v*"
   workflow_dispatch:
 
 permissions:
@@ -15,15 +17,15 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
-      - name: Install build dependency
-        run: python -m pip install pyinstaller==6.16.0
+      - name: Install dependencies
+        run: python -m pip install -r requirements-qt.txt pyinstaller==6.16.0
 
       - name: Run tests
         run: python -m unittest -v
@@ -35,22 +37,34 @@ jobs:
           --clean
           --onefile
           --windowed
-          --name RimWorldTranslator
-          rimworld_translator.py
+          --exclude-module tkinter
+          --name RimWorldTranslator-Qt
+          rimworld_translator_qt.py
+
+      - name: Smoke-test packaged GUI
+        shell: pwsh
+        run: |
+          $process = Start-Process "dist/RimWorldTranslator-Qt.exe" -WindowStyle Hidden -PassThru
+          Start-Sleep -Seconds 5
+          $process.Refresh()
+          if ($process.HasExited) {
+            throw "Qt application exited during smoke test with code $($process.ExitCode)"
+          }
+          Stop-Process -Id $process.Id
 
       - name: Create checksum
         shell: pwsh
         run: |
-          $hash = (Get-FileHash "dist/RimWorldTranslator.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  RimWorldTranslator.exe" | Set-Content "dist/RimWorldTranslator.exe.sha256" -Encoding utf8
+          $hash = (Get-FileHash "dist/RimWorldTranslator-Qt.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  RimWorldTranslator-Qt.exe" | Set-Content "dist/RimWorldTranslator-Qt.exe.sha256" -Encoding utf8
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: RimWorldTranslator-Windows
+          name: RimWorldTranslator-Qt-Windows
           path: |
-            dist/RimWorldTranslator.exe
-            dist/RimWorldTranslator.exe.sha256
+            dist/RimWorldTranslator-Qt.exe
+            dist/RimWorldTranslator-Qt.exe.sha256
           if-no-files-found: error
 
       - name: Upload files to GitHub Release
@@ -60,6 +74,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >-
           gh release upload "${{ github.ref_name }}"
-          "dist/RimWorldTranslator.exe"
-          "dist/RimWorldTranslator.exe.sha256"
+          "dist/RimWorldTranslator-Qt.exe"
+          "dist/RimWorldTranslator-Qt.exe.sha256"
           --clobber

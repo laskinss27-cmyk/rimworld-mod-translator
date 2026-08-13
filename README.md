@@ -8,6 +8,19 @@
 
 ---
 
+## Two editions / Две версии
+
+| Edition | Branch | Interface | Download |
+|---|---|---|---|
+| **Qt Edition** | `qt-modern` | Modern PySide6 / Qt 6 interface, drag-and-drop and background tasks | `RimWorldTranslator-Qt.exe` in Qt prereleases |
+| **Classic** | `main` | Lightweight Tkinter interface | [`RimWorldTranslator.exe`](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases/tag/v4.0.0) |
+
+Ветка `qt-modern` развивается отдельно и не заменяет классическую версию. Обе используют один формат CSV и один движок создания переводов.
+
+The `qt-modern` branch is developed independently and does not replace Classic. Both editions use the same CSV format and translation engine.
+
+---
+
 ## Зачем это / Why
 
 В RimWorld тысячи модов, и большинство из них только на английском. Ручной перевод XML — это часы работы и риск сломать мод одной опечаткой в теге. Утилита вытаскивает только переводимый текст в CSV, ты переводишь его в Google Sheets одной формулой, импортируешь обратно — и мод заговорил на нужном языке.
@@ -31,7 +44,7 @@ RimWorld has thousands of mods, most of them English-only. Hand-editing XML take
 
 ## Quick Start / Быстрый старт
 
-1. Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases)
+1. Download `RimWorldTranslator-Qt.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases)
 2. Run it — no Python or dependencies needed
 3. Select the **root folder** of the mod → Export → Translate → **Build translation mod**
 
@@ -215,11 +228,16 @@ Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-
 
 ### Option 2: Run from source
 
-Requirements: Python 3.6+, Tkinter (included with Python).
+Requirements for the Qt branch: Python 3.9+ and PySide6.
 
 ```bash
-python rimworld_translator.py
+python -m pip install -r requirements-qt.txt
+python rimworld_translator_qt.py
 ```
+
+The Classic Tkinter entry point remains available as `rimworld_translator.py`.
+
+PySide6 / Qt is distributed under LGPLv3/GPLv3 or a commercial license. See [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
 ---
 

@@ -3,8 +3,11 @@ import subprocess
 import platform
 import shutil
 import xml.etree.ElementTree as ET
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, simpledialog
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog, messagebox, simpledialog
+except ImportError:  # The Qt edition deliberately ships without Tcl/Tk.
+    tk = ttk = filedialog = messagebox = simpledialog = None
 from datetime import datetime
 import re
 import json
