@@ -30,6 +30,8 @@ The Windows EXE requires no Python installation or XML editing. The workflow is:
 2. If the release includes `RimWorldTranslator.exe.sha256`, use it to verify the EXE checksum.
 3. Run the EXE. Windows may show a SmartScreen prompt for an unsigned executable.
 
+> ⭐ Does it work for you? [Give the project a star](https://github.com/laskinss27-cmyk/rimworld-mod-translator) so the author knows it helps someone. Until October, he thought he was the only one using it 🙂
+
 ### Run from source
 
 The project declares **Python 3.6+** support and requires **Tkinter**, normally included with Python on Windows. GitHub Actions builds and tests with **Python 3.12**; use that version to reproduce the release build. Older Python versions are not all tested automatically.
