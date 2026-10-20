@@ -1,228 +1,393 @@
 # RimWorld Mod Translator
 
-**Перевод любого мода RimWorld на любой язык за 5 минут — без Python, без знания XML, бесплатно.**
+[English documentation](README.en.md)
 
-**Translate any RimWorld mod into any language in 5 minutes — no Python, no XML knowledge, free.**
+Настольная утилита для перевода модов RimWorld. Она отбирает текст из XML с помощью эвристик, складывает его в CSV, а после перевода собирает **отдельный мод-локализацию** — исходный мод из Steam Workshop не трогается. Выборку нужно проверить перед переводом.
 
-![platform](https://img.shields.io/badge/platform-Windows-blue) ![python](https://img.shields.io/badge/python-3.6%2B-yellow) ![license](https://img.shields.io/badge/license-MIT-green) ![release](https://img.shields.io/github/v/release/laskinss27-cmyk/rimworld-mod-translator)
+Python, знание XML и ручное копирование тегов не нужны: достаточно скачать `RimWorldTranslator.exe`, выбрать папку мода и пройти три шага: экспорт → перевод в таблице → сборка.
 
----
-
-## Зачем это / Why
-
-В RimWorld тысячи модов, и большинство из них только на английском. Ручной перевод XML — это часы работы и риск сломать мод одной опечаткой в теге. Утилита вытаскивает только переводимый текст в CSV, ты переводишь его в Google Sheets одной формулой, импортируешь обратно — и мод заговорил на нужном языке.
-
-RimWorld has thousands of mods, most of them English-only. Hand-editing XML takes hours and one wrong tag breaks the mod. This tool extracts only the translatable strings into a CSV, you translate them in Google Sheets with one formula, import back — and the mod speaks your language.
+![platform](https://img.shields.io/badge/platform-Windows-blue)
+![python](https://img.shields.io/badge/python-3.6%2B-yellow)
+![license](https://img.shields.io/badge/license-MIT-green)
+![release](https://img.shields.io/github/v/release/laskinss27-cmyk/rimworld-mod-translator)
 
 ---
 
-## Что внутри / Features
+## Зачем это нужно
 
-- **Умная фильтрация** — три слоя анализа отделяют живой текст от `defName`, путей, чисел, enum'ов и кастомных идентификаторов. На большинстве модов работает «из коробки».
-- **Smart Merge** — обновил мод? Старые переводы сохраняются, нужно перевести только новое. Старое не теряется.
-- **Безопасный мод-перевод** — создаёт отдельный мод с `Languages/<язык>/DefInjected` и `Keyed`, не изменяя оригинальный Workshop-мод.
-- **Защита плейсхолдеров** — `{0}`, `{pawn}`, `{PAWN_gender ? his : her}`, `[PAWN_nameDef]` и подобные маскируются и проверяются перед сборкой.
-- **Резервные копии** — старый режим изменения оригинальных XML автоматически сохраняет копии файлов.
-- **Перекрёстная проверка defName** — технические идентификаторы, которые случайно похожи на слова (`Fire`, `Wood`), не переводятся.
-- **EN / RU интерфейс** с тёмной темой.
-- **Standalone EXE** — Python не нужен. Один файл, запустил, работаешь.
+Большинство модов RimWorld существуют только на английском. Правка XML вручную занимает часы: легко сломать тег, перевести `defName`, путь к текстуре или enum — и мод перестанет запускаться.
+
+Программа отделяет живой текст (`label`, `description`, письма, кнопки, keyed-строки) от технических значений и даёт таблицу, которую можно прогнать через Google Таблицы одной формулой. Готовый результат ставится как обычный мод поверх оригинала.
 
 ---
 
-## Quick Start / Быстрый старт
+## Что умеет программа
 
-1. Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases)
-2. Run it — no Python or dependencies needed
-3. Select the **root folder** of the mod → Export → Translate → **Build translation mod**
-
-Рекомендуемый порядок: выбрать корневую папку мода → экспортировать CSV → перевести столбец `Translation` → нажать **«Создать мод-перевод»**. Программа попросит имя папки языка (`Russian`), версию RimWorld (`1.6`) и каталог для результата.
-
-The recommended workflow is: select the mod root → export CSV → translate the `Translation` column → click **Build translation mod**. The app asks for the RimWorld language folder (`Russian`), game version (`1.6`), and output directory.
-
-The generated package contains:
-
-```text
-OriginalMod_Russian_Translation/
-├── About/About.xml
-├── Languages/Russian/DefInjected/...
-├── Languages/Russian/Keyed/...
-└── Generation report.txt
-```
-
-`About.xml` declares the original mod as a dependency and places the translation after it in load order. The source mod is never rewritten by this mode.
+- **Умная фильтрация.** Правила для тегов, значений и известных идентификаторов помогают отсеивать технические данные. Для известных текстовых тегов и английского Keyed действуют исключения — фильтр не гарантирует отсутствие лишних строк.
+- **Безопасный мод-перевод.** Создаёт отдельный пакет с `Languages/<язык>/DefInjected` и `Keyed`. Оригинальные XML не перезаписываются.
+- **Smart Merge.** При повторном экспорте после обновления мода старые переводы сохраняются; переводить нужно только новые строки.
+- **Защита плейсхолдеров.** `{0}`, `{pawn}`, `{PAWN_gender ? his : her}`, `[PAWN_nameDef]` маскируются при экспорте. Если переводчик сломал плейсхолдер, строка **не попадёт** в готовый мод.
+- **Дополнительные теги.** Если фильтр пропустил кастомный текстовый тег мода, его можно принудительно включить.
+- **Интерфейс RU / EN** с тёмной темой. Кнопка «Настройки» сохраняет язык и доп. теги в `translator_settings.json` в текущей рабочей папке.
+- **Готовый EXE.** Один файл под Windows, Python ставить не обязательно.
+- **Режим «Изменить оригинал».** Устаревший запасной путь: пишет перевод прямо в XML мода и заранее делает резервные копии.
 
 ---
 
-## ⚠️ Important Notes / Важные замечания
+## Установка
 
-### Always point to the mod root folder / Всегда указывайте корневую папку мода
+### Вариант 1. Готовый EXE (рекомендуется)
 
-```
-✅ Mods/2844129100_yuran_race/
-❌ Mods/2844129100_yuran_race/1.6/Defs/
-```
+1. Скачайте `RimWorldTranslator.exe` со страницы [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases).
+2. Если к релизу приложен `RimWorldTranslator.exe.sha256`, по нему можно проверить целостность EXE.
+3. Запустите EXE. Зависимости не нужны.
 
-The program recursively scans all subfolders (`1.3/`, `1.4/`, `1.5/`, `Compatibility/`, etc.). If you point to a subfolder, files outside it will be missed.
+Windows может показать предупреждение SmartScreen для неподписанного файла — это ожидаемо для независимой утилиты.
 
-Программа рекурсивно сканирует все подпапки (`1.3/`, `1.4/`, `1.5/`, `Compatibility/` и т.д.). Если указать подпапку — файлы за её пределами будут пропущены.
+### Вариант 2. Запуск из исходников
 
-### Always review the CSV before translating / Всегда проверяйте CSV перед переводом
-
-The program uses smart heuristics to separate translatable text from technical data, but **no filter is 100% perfect** — especially with mods that use many custom tags.
-
-Before translating, scan the CSV and check:
-- Are there any numbers, enum values, or code-like strings? → Delete those rows
-- Is there text that looks like an identifier (PascalCase, paths)? → Delete those rows
-- Is there real text that was missed? → Add the tag name to "Extra tags" field and re-export
-
-Программа использует эвристики для отделения текста от технических данных, но **ни один фильтр не идеален на 100%** — особенно с модами, которые используют много кастомных тегов.
-
-Перед переводом просмотрите CSV и проверьте:
-- Есть ли числа, enum-значения, строки похожие на код? → Удалите эти строки
-- Есть ли текст, похожий на идентификатор (PascalCase, пути)? → Удалите эти строки
-- Есть ли пропущенный текст? → Добавьте имя тега в поле «Доп. теги» и пересканируйте
-
-### Safe mode limitations / Ограничения безопасного режима
-
-- Для сборки выбирается одна версия RimWorld; строки папок других версий пропускаются.
-- Строки внутри DLL и XML-патчей автоматически не локализуются.
-- Абстрактные Def без `defName` и нестандартные списки могут потребовать ручной проверки. Все такие случаи записываются в `Generation report.txt`.
-- Строка с потерянным или изменённым плейсхолдером не добавляется в готовый мод.
-
-The safe builder targets one RimWorld version. DLL strings, XML patches, abstract Defs without `defName`, and unusual custom list loaders may require manual work. Every skipped or ambiguous entry is written to `Generation report.txt`.
-
-### Editing the original mod / Изменение оригинального мода
-
-Кнопка **«Изменить оригинал»** оставлена для совместимости. Перед записью программа создаёт копии затронутых XML в `RimWorldTranslator_Backups/<дата-время>/`. Обновление Steam Workshop всё равно заменит изменённые файлы, поэтому для обычного использования рекомендуется отдельный мод-перевод.
-
-### Do not delete the Languages/ folder / Не удаляйте папку Languages/
-
-The `Languages/` folder contains not only translations but also **name lists**, **grammar rules**, and **string files** required by the mod. Deleting it causes errors like `No string files for Name/...` and `Grammar unresolvable`.
-
-Папка `Languages/` содержит не только переводы, но и **списки имён**, **правила грамматики** и **строковые файлы**, необходимые моду. Её удаление вызывает ошибки вида `No string files for Name/...` и `Grammar unresolvable`.
-
----
-
-## How the filter works / Как работает фильтрация
-
-Three layers of analysis:
-
-### Layer 1: Tag blacklist / Чёрный список тегов
-
-Tags that **never** contain translatable text:
-
-```
-defName, parentName, thingClass, workerClass, texPath, soundDef, shaderType,
-slot, category, capacity, outcome, storeAs, ...
-```
-
-Patterns: any tag ending in `Class`, `Path`, `Def`, `Defs`, `Color`, `Size`, `Offset`, or starting with `sound`.
-
-### Layer 2: Value analysis / Анализ значений
-
-| Value | Decision | Reason |
-|-------|----------|--------|
-| `A wooden table for eating.` | ✅ Translate | Multiple words, ends with period |
-| `WoodenTable` | ❌ Skip | PascalCase — identifier |
-| `Things/Building/Table` | ❌ Skip | File path |
-| `true` / `false` | ❌ Skip | Boolean |
-| `0.85` | ❌ Skip | Number |
-| `#FF5500` | ❌ Skip | Color code |
-| `Childhood` / `Fail` / `Success` | ❌ Skip | Known enum value |
-| `(0.34, 0.5, -0.1)` | ❌ Skip | Coordinate tuple |
-| `$($var * 60200)` | ❌ Skip | Code expression |
-| `Fire` | Depends | Cross-checked against defNames |
-
-### Layer 3: Cross-reference / Перекрёстная проверка
-
-Before extracting text, the program collects all `defName` values and `*Def` references across the mod. If a value matches a known identifier — it is **not translated**, even if it looks like a normal word.
-
----
-
-## Workflow
-
-### 1. Export / Экспорт
-
-1. Select the **root folder** of the mod
-2. Click "Export to CSV"
-3. **Review the CSV** — remove any false positives
-4. The file `translations.csv` is created next to the program
-
-### 2. Translate in Google Sheets / Перевод в Google Sheets
-
-1. Open `translations.csv` in Google Sheets (File → Import → Upload)
-2. Filter by **Status** = `NEW`
-3. In the **Translation** column (E), enter the formula:
-   ```
-   =GOOGLETRANSLATE(D2; "auto"; "ru")
-   ```
-4. Drag the formula to all NEW rows
-5. Copy the Translation column → Paste as **values only** (Ctrl+Shift+V)
-6. Download as CSV (File → Download → CSV)
-
-Supported languages: any supported by Google Translate. Replace `"ru"` with the desired code (`"de"`, `"fr"`, `"zh"`, `"ja"`, `"ko"`, `"uk"`, etc.).
-
-### 3. Build / Сборка
-
-1. Click **Build translation mod / Создать мод-перевод**
-2. Select the translated CSV
-3. Enter the RimWorld language folder and target game version
-4. Select an output folder
-5. Enable the generated translation after the original mod in RimWorld
-
-Rows with status `UNUSED` are automatically skipped. **Edit original / Изменить оригинал** is a legacy fallback with automatic backups.
-
----
-
-## Smart Merge
-
-When re-exporting (e.g., after a mod update):
-
-- **NEW** — new string, needs translation
-- **DONE** — already translated, translation is preserved
-- **UNUSED** — was in previous translation but no longer in the mod. Kept in CSV just in case, skipped on import
-
-**Updating a mod does not destroy your work.** Translated strings are preserved, only new ones need translation.
-
----
-
-## Extra tags / Дополнительные теги
-
-The "Extra tags" field lets you force-include tags the program didn't recognize as text. Comma-separated, e.g.: `customTag, myModLabel`. Use only if the program missed translatable text.
-
----
-
-## Placeholders / Плейсхолдеры
-
-The program automatically protects placeholders like `{pawn}`, `{0}`, `[PAWN_nameDef]`, `[PAWN_pronoun]` from being mangled by translation. They are masked before export and restored on import.
-
----
-
-## Limitations / Ограничения
-
-- **Translation quality** depends on Google Translate. For RimWorld context (medieval, sci-fi, specific terminology), machine translation may be inaccurate. Manual review is recommended.
-- **Nested markup** — if a tag contains child elements (`<text>Before <b>war</b></text>`), only the text before the first child is extracted.
-- **DLL strings** — text inside compiled assemblies (.dll) is not extracted.
-- **Edge cases** — single-word values in custom tags may occasionally be included or missed. The "Extra tags" field and manual CSV review solve this.
-
----
-
-## Installation / Установка
-
-### Option 1: Download exe (recommended)
-
-Download `RimWorldTranslator.exe` from [Releases](https://github.com/laskinss27-cmyk/rimworld-mod-translator/releases). No dependencies needed.
-
-### Option 2: Run from source
-
-Requirements: Python 3.6+, Tkinter (included with Python).
+Для запуска заявлена поддержка **Python 3.6+** и нужен **Tkinter** — он входит в стандартную установку Python на Windows. Автоматическая сборка и тесты в GitHub Actions используют Python **3.12**; для воспроизводимой сборки используйте его. Все старые версии Python автоматически не проверяются.
 
 ```bash
 python rimworld_translator.py
 ```
 
+Сторонние пакеты для работы не требуются. PyInstaller нужен только если вы сами собираете EXE.
+
+### Сборка своего EXE
+
+Используйте Python 3.12, как в GitHub Actions:
+
+```bash
+python -m pip install pyinstaller==6.16.0
+python -m unittest -v
+python -m PyInstaller --noconfirm --clean --onefile --windowed --name RimWorldTranslator rimworld_translator.py
+```
+
+Готовый файл появится в `dist/RimWorldTranslator.exe`. Workflow GitHub Actions запускается по тегу `v*` или вручную, прогоняет тесты и сохраняет EXE с контрольной суммой как артефакт. При запуске по тегу он также загружает файлы в **уже созданный GitHub Release** с этим тегом; сам релиз workflow не создаёт.
+
 ---
 
-## License / Лицензия
+## Как устроен интерфейс
 
-MIT
+Окно содержит:
+
+| Элемент | Назначение |
+|---|---|
+| **Папка мода** | Корневая папка мода (кнопка «Обзор…»). Папка-иконка открывает её в проводнике. |
+| **Доп. теги** | Список XML-тегов через запятую для расширения выборки с учётом проверки технических значений. |
+| **Экспорт в CSV** | Сканирует мод и пишет `translations.csv` в текущую рабочую папку. |
+| **Создать мод-перевод** | Собирает отдельный мод из переведённого CSV. |
+| **Изменить оригинал** | Пишет переводы обратно в XML исходного мода (с бэкапом). |
+| **Настройки** | Сохраняет язык интерфейса и доп. теги в текущую рабочую папку. |
+| **EN / RU** | Переключение языка интерфейса. |
+| Журнал и статус | Ход сканирования, ошибки, предупреждения. |
+
+---
+
+## Быстрый старт
+
+Рекомендуемый порядок работы:
+
+1. Запустите программу.
+2. Укажите **корневую папку мода**, не подпапку `Defs`.
+3. Нажмите **«Экспорт в CSV»**.
+4. Просмотрите таблицу и удалите явно технические строки, если они попали в выборку.
+5. Переведите столбец `Translation` (вручную или через Google Таблицы).
+6. Нажмите **«Создать мод-перевод»**, выберите CSV, имя языковой папки RimWorld и версию игры.
+7. Прочитайте `Generation report.txt`, затем положите получившуюся папку в `Mods` и включите её **после** оригинального мода.
+
+### Куда указывать папку
+
+Программа рекурсивно обходит все подкаталоги (`1.4/`, `1.5/`, `1.6/`, `Compatibility/` и т.д.). Если выбрать вложенную папку, файлы снаружи не попадут в CSV.
+
+```text
+Правильно:  Mods/2844129100_yuran_race/
+Неправильно: Mods/2844129100_yuran_race/1.6/Defs/
+```
+
+Типичные пути к модам на Windows:
+
+- Steam Workshop: `Steam\steamapps\workshop\content\294100\<id>`
+- Локальные моды: `RimWorld\Mods\`
+
+---
+
+## Рабочий процесс подробно
+
+### 1. Экспорт
+
+При экспорте программа:
+
+1. Ищет XML, пропуская служебные каталоги (`Patches`, `Textures`, `Sounds`, `Assemblies`, `.git`, `bin`, `obj` и т.п.) и служебные файлы (`About.xml`, `LoadFolders.xml`, `Manifest.xml`, `PublishedFileId.xml`).
+2. Из папки `Languages` берёт **только** `Languages/English/Keyed`. Остальные языки не сканируются: их не нужно переводить заново.
+3. Собирает идентификаторы (`defName` и ссылки `*Def`) — это первый проход.
+4. Извлекает текст, маскирует плейсхолдеры и пишет CSV.
+5. Если в текущей рабочей папке уже есть `translations.csv` с прошлыми переводами, подмешивает их (Smart Merge).
+
+Файл всегда называется `translations.csv` и создаётся **в текущей рабочей папке программы**. Это папка, из которой выполнен запуск; у ярлыка она задаётся полем «Рабочая папка». Она может отличаться от папки EXE. Экспорт перезаписывает этот файл после чтения старых переводов: сохраните переведённую таблицу под этим именем перед повторным экспортом и держите отдельную копию для каждого мода.
+
+### 2. Структура CSV
+
+Кодировка: UTF-8 с BOM (`utf-8-sig`), чтобы Excel и Google Таблицы открывали кириллицу без кракозябр.
+
+| Столбец | Смысл |
+|---|---|
+| `File` | Относительный путь XML внутри мода. |
+| `Tag` | Имя XML-тега (`label`, `description`, ключ Keyed и т.д.). |
+| `XPath` | Упрощённый путь вида `//label` — ориентир для человека, не точный XPath. |
+| `Original Text` | Исходный текст; плейсхолдеры заменены на `__RWPH_0__` и подобные. |
+| `Translation` | Сюда пишется перевод. Для статуса `DONE` уже заполнен. |
+| `Status` | `NEW`, `DONE` или `UNUSED`. |
+| `Placeholders` | Карта масок, например `__RWPH_0__={0}`. Не редактируйте этот столбец. |
+
+Статусы:
+
+- **NEW** — для строки не найден непустой сохранённый перевод; это может быть новая или ранее не переведённая строка.
+- **DONE** — перевод уже был, он сохранён.
+- **UNUSED** — ранее переведённая строка больше не попала в выборку (например, её удалили, изменили текст или правила отбора). Её перевод остаётся в CSV и **пропускается** при сборке и импорте. Старые строки с пустым переводом не сохраняются.
+
+### 3. Перевод в Google Таблицах
+
+1. Файл → Импорт → загрузить `translations.csv`.
+2. Отфильтруйте столбец `Status` по значению `NEW`.
+3. В первой видимой строке `NEW` заполните столбец `Translation`. Например, если это строка 2, введите в `E2`:
+
+   ```text
+   =GOOGLETRANSLATE(D2; "auto"; "ru")
+   ```
+
+   Код `"ru"` замените на нужный язык: `"de"`, `"fr"`, `"uk"`, `"zh"`, `"ja"`, `"ko"` и т.д. Номер строки в `D2` должен совпадать со строкой перевода. Если локаль таблицы требует запятые между аргументами, замените `;` на `,`.
+
+4. Заполните формулой только строки `NEW` с пустым переводом; не перезаписывайте сохранённые переводы `DONE`. Для массового перевода удобно вынести новые строки на отдельный лист, затем вернуть значения в те же строки CSV.
+5. Дождитесь результатов. При желании зафиксируйте их: скопируйте переводы и вставьте **только значения** (`Ctrl+Shift+V`).
+6. Проверьте, что маски `__RWPH_0__` не исчезли и не «перевелись».
+7. Файл → Скачать → CSV.
+
+Машинный перевод часто путает термины RimWorld (работы, хеддифы, качества предметов). Для публикации лучше пройтись глазами по названиям и игровым сообщениям.
+
+### 4. Сборка мода-перевода
+
+Нажмите **«Создать мод-перевод»**. Программа спросит:
+
+1. CSV с переводами.
+2. **Имя папки языка RimWorld** — как в игре, с заглавной буквы. Примеры: `Russian`, `German`, `French`, `Spanish`, `ChineseSimplified`, `Japanese`, `Korean`, `Polish`, `PortugueseBrazilian`, `Ukrainian`.
+3. **Версию RimWorld** — например `1.6`. Строки из папок других версий (`1.4/`, `1.5/`) в пакет не попадут.
+4. Каталог, куда сохранить результат.
+
+Имя выходной папки: `<ИмяМода>_<Язык>_Translation`. Если такая папка уже есть, к имени добавится дата и время.
+
+Внутри получится примерно так:
+
+```text
+Example Mod_Russian_Translation/
+├── About/About.xml
+├── Languages/Russian/DefInjected/ThingDef/Things.xml
+├── Languages/Russian/Keyed/UI.xml
+└── Generation report.txt
+```
+
+Если в исходном `About/About.xml` есть `packageId`, сгенерированный `About.xml` объявляет зависимость от него и добавляет `loadAfter`. Если `packageId` отсутствует, зависимость и порядок загрузки нужно проверить вручную — об этом будет предупреждение в отчёте. Сам оригинал не меняется.
+
+В XML перевода рядом с каждой строкой пишется комментарий с английским оригиналом — удобно править файл вручную позже.
+
+**`Generation report.txt`** — обязательное чтение после сборки. Там:
+
+- сколько строк попало в мод;
+- сколько строк CSV не сопоставилось с XML;
+- сколько строк отброшено из-за сломанных плейсхолдеров;
+- предупреждения: безымянные/абстрактные Def, повторяющиеся теги, отсутствие `packageId`.
+
+Готовый каталог скопируйте в папку модов RimWorld и включите в списке модов **ниже** оригинала.
+
+---
+
+## Smart Merge: обновление мода
+
+Когда автор выпустил новую версию:
+
+1. Сохраните копию CSV этого мода и поместите его переведённую версию под именем `translations.csv` в текущую рабочую папку программы.
+2. Снова укажите папку мода и нажмите **«Экспорт в CSV»**.
+3. Уже переведённые фразы получат статус `DONE`.
+4. Новые фразы — `NEW`.
+5. Пропавшие из выборки строки с сохранённым переводом — `UNUSED` (перевод не удаляется из таблицы).
+
+Ключ слияния: пара «относительный путь файла + исходный текст». Если автор **изменил английскую формулировку**, строка станет новой, даже если смысл тот же — её нужно перевести заново.
+
+Тег не входит в ключ Smart Merge: одинаковые исходные фразы в одном файле используют один сохранённый перевод. Статус `DONE` означает, что перевод найден, а не что он проверен на качество или сохранность плейсхолдеров.
+
+---
+
+## Как работает фильтр
+
+Ни один эвристический фильтр не идеален на 100%, особенно у модов с нестандартными тегами. Перед переводом всегда просмотрите CSV.
+
+### Слой 1. Чёрный список тегов
+
+При обычном отборе теги вроде `defName`, `parentName`, `thingClass`, `texPath`, `shaderType`, `slot`, `category`, `capacity`, `outcome`, `storeAs` исключаются.
+
+При обычном отборе также отбрасываются теги:
+
+- с суффиксами `Class`, `Path`, `Def`, `Defs`, `Color`, `Size`, `Offset`, `Shader`, `Type`, `Tag`, `Channel`;
+- с префиксами `sound`, `render`, `default`.
+
+Исключение: известные текстовые теги (`label`, `description`, `letterText`, `jobString` и десятки других) имеют приоритет над чёрным списком. Поэтому, например, `beginLetterDef` всё равно извлекается, если внутри живой текст.
+
+### Слой 2. Анализ значения
+
+Примеры ниже относятся к обычным, не включённым принудительно тегам, которые не входят в список известных текстовых тегов и не исключены чёрным списком.
+
+| Значение | Решение | Почему |
+|---|---|---|
+| `A wooden table for eating.` | Переводить | Несколько слов, точка в конце |
+| `WoodenTable` | Пропустить | PascalCase — идентификатор |
+| `Things/Building/Table` | Пропустить | Путь |
+| `true` / `false` | Пропустить | Булево |
+| `0.85` | Пропустить | Число |
+| `#FF5500` | Пропустить | Цвет |
+| `Childhood`, `Fail`, `Success` | Пропустить | Известный enum |
+| `(0.34, 0.5, -0.1)` | Пропустить | Координаты |
+| `$($var * 60200)` | Пропустить | Выражение |
+| Три и больше слов, перевод строки или длина > 60 | Переводить после технических проверок | Похоже на фразу |
+
+Для известных текстовых тегов enum-слова вроде `Finish` или `Reverse` **не режутся**: это могут быть подписи кнопок. Для них также не применяются обычные проверки PascalCase, цвета и совпадения с известными идентификаторами; часть технических значений может попасть в CSV. Текст английского Keyed извлекается без этих фильтров.
+
+### Слой 3. Перекрёстная проверка идентификаторов
+
+Перед извлечением текста собираются `defName`, похожие на идентификаторы значения тегов `*Def` / `*Defs` и некоторые элементы `li`. При обычном отборе совпадение с этим набором исключается **после** проверки на явную фразу. Проверка не применяется к известным текстовым тегам, английскому Keyed и принудительно включённым значениям, прошедшим технический фильтр. Поэтому `Fire` в кастомном теге может быть исключён, а в `label` — сохранён.
+
+### Дополнительные теги
+
+Поле «Доп. теги» расширяет выборку для указанных имён (через запятую, без учёта регистра). Принудительное включение срабатывает, только если значение проходит `is_definitely_technical`: эта проверка отсекает не только числа, пути и UUID, но и известные enum, PascalCase, цвета и другие технические формы. Если проверка не пройдена, остаются обычные правила тега; поле не гарантирует включение любой строки.
+
+Пример: `customTag, myModLabel`
+
+Используйте только если в CSV нет нужных строк. Лишние теги снова засорят таблицу идентификаторами.
+
+---
+
+## Плейсхолдеры
+
+Перед записью в CSV живые вставки заменяются на токены `__RWPH_0__`, `__RWPH_1__` … Карта соответствий лежит в столбце `Placeholders`. При сборке и импорте токены возвращаются обратно.
+
+Защищаются конструкции вида:
+
+- `{0}`, `{1}`
+- `{pawn}`, `{PAWN_nameDef}`
+- `{PAWN_gender ? his : her}`
+- `[PAWN_pronoun]`, `[PAWN_nameDef]`
+
+Правила:
+
+- не переводите содержимое фигурных и квадратных скобок;
+- не удаляйте токены `__RWPH_N__` из столбца перевода;
+- если в готовом тексте пропал `{0}` или появился лишний, строка будет пропущена и попадёт в отчёт как `Placeholder mismatch`.
+
+Сравнение плейсхолдеров выполняется при **создании отдельного мода-перевода**: проверяются состав и количество распознанных вставок. Старый режим «Изменить оригинал» восстанавливает маски, но не выполняет эту проверку. Вложенные фигурные скобки и нестандартные конструкции могут потребовать ручной проверки.
+
+---
+
+## Что программа сканирует и чего не трогает
+
+**Сканирует**
+
+- XML рекурсивно по всему моду вне исключённых каталогов, в том числе в `Defs`, версионных и совместимых подпапках;
+- `Languages/English/Keyed`.
+
+Экспорт не ограничен каталогом `Defs`. Но сборщик отдельного перевода обрабатывает вне английского Keyed только XML с корнем `<Defs>` и конкретными Def с `defName`; остальные строки могут остаться несопоставленными в отчёте. `LoadFolders.xml` не используется для определения активных файлов: выбор версии основан на компонентах пути вида `1.5` или `1.6`, а общие папки остаются включёнными.
+
+**Не сканирует**
+
+- `Patches` (XML-патчи с `PatchOperation`);
+- `Textures`, `Sounds`, `Assemblies`;
+- другие языки в `Languages`;
+- текст внутри DLL;
+- `About.xml` и прочие служебные манифесты.
+
+**Не удаляйте** оригинальную папку `Languages/` у мода. Кроме переводов там часто лежат списки имён, правила грамматики и string files. Их удаление даёт ошибки вроде `No string files for Name/...` и `Grammar unresolvable`.
+
+---
+
+## Режим «Изменить оригинал»
+
+Кнопка оставлена для совместимости и частных случаев (локальный мод, который вы сами поддерживаете).
+
+Что происходит:
+
+1. Программа предупреждает, что XML исходного мода будут изменены.
+2. Копии затронутых файлов пишутся в `RimWorldTranslator_Backups/<дата-время>/` внутри папки мода.
+3. Переводы подставляются в те же текстовые узлы XML.
+
+Ограничения этого режима:
+
+- обновление мода в Steam Workshop **затрёт** правки;
+- вы правите английские исходники, а не стандартный механизм `DefInjected`;
+- для обычной игры всегда лучше отдельный мод-перевод.
+
+В этом режиме нет проверки соответствия плейсхолдеров и фильтрации строк по выбранной версии игры. Проверьте CSV вручную перед импортом.
+
+---
+
+## Ограничения и типичные сюрпризы
+
+- **Качество перевода** зависит от переводчика или Google Translate. Термины RimWorld лучше вычитывать.
+- **Вложенная разметка.** Если внутри тега есть дочерние элементы (`<text>Before <b>war</b></text>`), извлекается только текст до первого ребёнка.
+- **Одна версия за сборку.** Для `1.5` и `1.6` нужны два пакета или две сборки с разной целевой версией.
+- **Def без `defName`**, включая абстрактные шаблоны, пропускаются при сборке; это отражается в отчёте.
+- **Нестандартные списки и повторяющиеся теги** могут потребовать ручной правки `DefInjected`.
+- **Строки в DLL и патчах** автоматически не локализуются.
+- **Однословные кастомные теги** иногда попадают в CSV или, наоборот, пропускаются. Лечится доп. тегами и ручной чисткой таблицы.
+- **Пути CSV проверяются** на выход за выбранную папку мода через `../` или абсолютный путь вне неё. Эта проверка не разрешает символические ссылки и junction: используйте CSV и папки, которым доверяете.
+
+---
+
+## Проверка CSV перед переводом
+
+Пройдитесь по таблице и проверьте подозрительные значения:
+
+- числа, `true`/`false`, enum вроде `North`, `Melee`;
+- PascalCase без пробелов, пути `Things/...`, имена с подчёркиваниями;
+- значения, которые явно являются кодом, а не фразой для игрока.
+
+Удаляйте только технические строки. Например, `North` или `Melee` могут быть настоящими подписями интерфейса — ориентируйтесь на тег и контекст исходного XML.
+
+Если живого текста не хватает:
+
+1. Добавьте имя тега в «Доп. теги».
+2. Экспортируйте снова (Smart Merge сохранит уже сделанные переводы).
+
+Пустые `Translation` и строки `UNUSED` при сборке игнорируются.
+
+---
+
+## Разработка
+
+Структура репозитория:
+
+```text
+rimworld_translator.py   — приложение (GUI + логика экспорта/сборки)
+test_translator.py       — юнит-тесты сканера, Smart Merge, плейсхолдеров и сборки пакета
+.github/workflows/release.yml — сборка Windows-релиза
+```
+
+Запуск тестов:
+
+```bash
+python -m unittest -v
+```
+
+Тесты проверяют, среди прочего:
+
+- круговую защиту плейсхолдеров, включая грамматические маски;
+- что исходный мод не меняется при сборке пакета;
+- что keyed-строки других языков не сканируются;
+- что строки чужой версии игры отбрасываются;
+- что перевод с потерянным `{0}` не попадает в выходной XML.
+
+---
+
+## Лицензия
+
+MIT. Авторские права — см. файл [LICENSE](LICENSE).
+
+Русское руководство основано на предложении [AbsolutSSed в PR #1](https://github.com/laskinss27-cmyk/rimworld-mod-translator/pull/1), с уточнениями по текущей реализации.
