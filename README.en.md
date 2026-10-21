@@ -73,7 +73,7 @@ The result is `dist/RimWorldTranslator.exe`. The GitHub Actions workflow runs on
 2. Click **Export to CSV**.
 3. Review the CSV and remove clearly technical rows.
 4. Translate the `Translation` column manually or in Google Sheets.
-5. Click **Build translation mod**, select the translated CSV, enter the RimWorld language folder and target game version, then choose an output directory.
+5. Click **Build translation mod**, select the translated CSV, enter the RimWorld language folder, source version and compatible versions, then choose an output directory.
 6. Read `Generation report.txt` in the generated package.
 7. Copy the generated folder into RimWorld's `Mods` directory and enable it **after** the original mod.
 
@@ -136,8 +136,13 @@ The builder asks for:
 
 1. The translated CSV.
 2. A RimWorld language folder name, such as `Russian`, `German`, `French`, `Spanish`, `ChineseSimplified`, `Japanese`, `Korean`, `Polish`, `PortugueseBrazilian` or `Ukrainian`.
-3. A target game version, such as `1.6`. Rows in paths for other versions are excluded; common, unversioned paths remain included.
-4. An output parent directory.
+3. A **source version**, such as `1.5`. Files for that version and common, unversioned files are included. Rows in paths for other versions are excluded.
+4. **Compatible versions**, separated by commas, such as `1.4, 1.5`. Each version is written as a separate entry in `About.xml`'s `supportedVersions`. This list does not change source selection.
+5. An output parent directory.
+
+The compatibility field defaults to the selected source version only. Users add other versions themselves. The application validates the list format and removes duplicates while preserving order, but does not verify actual game compatibility. List versions on which you have checked the result.
+
+For example, source version `1.5` with compatibility `1.4, 1.5` builds one translation from `1.5` and common files, then declares compatibility with both versions. It does not include source files from the `1.4` directory.
 
 The application creates `<ModName>_<Language>_Translation`. If that directory already exists, it appends a timestamp.
 
@@ -151,7 +156,7 @@ Example Mod_Russian_Translation/
 
 If the source `About/About.xml` contains a `packageId`, the generated metadata declares the original mod as a dependency and adds `loadAfter`. Otherwise, the report warns that the dependency needs manual checking. The source mod is not rewritten.
 
-Generated language XML includes comments with the original text. Read **`Generation report.txt`** for generated entry counts, unmatched CSV rows, placeholder mismatches, unnamed Defs, repeated tags, duplicate keys and missing package metadata.
+Generated language XML includes comments with the original text. Read **`Generation report.txt`** for the source version, declared compatible versions, generated entry counts, unmatched CSV rows, placeholder mismatches, unnamed Defs, repeated tags, duplicate keys and missing package metadata.
 
 ## Smart Merge after an update
 
@@ -221,7 +226,7 @@ It excludes `Patches`, `Textures`, `Sounds`, `Assemblies`, `.git`, `.vs`, `bin`,
 
 Export is not restricted to `Defs` directories. However, outside English Keyed, the separate mod builder only handles XML with a `<Defs>` root and Defs with a direct `defName`. Other exported rows may remain unmatched in the report.
 
-- **One target version per build:** version filtering uses path components such as `1.5` or `1.6`, not `LoadFolders.xml` rules. Common paths remain included.
+- **One source version per build:** version filtering uses path components such as `1.5` or `1.6`, not `LoadFolders.xml` rules. Common paths remain included. The compatibility list can contain several versions, but does not merge their source files. If they need different translations, build separate packages from the appropriate source versions.
 - **Unnamed Defs:** templates without `defName` are skipped during package generation and reported.
 - **Lists and repeated tags:** unusual loaders, repeated tags or duplicate keys may require manual review of `DefInjected`.
 - **Nested XML:** for `<text>Before <b>war</b></text>`, extraction only reads the text before the first child for the `text` element.
@@ -255,7 +260,7 @@ Run the existing tests:
 python -m unittest -v
 ```
 
-They cover placeholder round trips, parent-path rejection, Smart Merge restoration, nested Def keys, English Keyed scanning, source preservation, version filtering, broken placeholders and versioned overrides.
+They cover placeholder round trips, parent-path rejection, Smart Merge restoration, nested Def keys, English Keyed scanning, source preservation, version filtering, independent compatibility declarations, build dialog settings and cancellation, malformed version lists, broken placeholders and versioned overrides.
 
 ## License
 

@@ -3,12 +3,14 @@ import os
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
+from unittest.mock import Mock, patch
 
 from rimworld_translator import (
     build_translation_package,
     iter_def_translation_targets,
     load_existing_translations,
     mask_placeholders,
+    parse_compatible_versions,
     RimWorldTranslator,
     safe_join,
     unmask_placeholders,
@@ -16,6 +18,20 @@ from rimworld_translator import (
 
 
 class TranslatorHelpersTests(unittest.TestCase):
+    def test_parses_compatible_versions_and_removes_duplicates_in_order(self):
+        self.assertEqual(
+            parse_compatible_versions(" 1.3, 1.2 , 1.3, 1.6 "),
+            ["1.3", "1.2", "1.6"],
+        )
+        self.assertEqual(parse_compatible_versions("1.2"), ["1.2"])
+
+    def test_rejects_empty_or_malformed_compatible_versions(self):
+        for value in ("", " ", ",", "1.2,", ",1.2", "1.2,,1.3",
+                      "1.2 1.3", "v1.2", "1.2.0", "1.2\n1.3"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    parse_compatible_versions(value)
+
     def test_placeholder_round_trip_includes_numeric_and_grammar(self):
         source = "Use {0} on {PAWN_nameDef}; {PAWN_gender ? his : her} [PAWN_pronoun]"
         masked, mapping = mask_placeholders(source)
@@ -162,6 +178,10 @@ class TranslationPackageTests(unittest.TestCase):
 
             about_root = ET.parse(os.path.join(output, "About", "About.xml")).getroot()
             self.assertEqual(
+                [item.text for item in about_root.findall("supportedVersions/li")],
+                ["1.6"],
+            )
+            self.assertEqual(
                 about_root.findtext("modDependencies/li/packageId"),
                 "author.example",
             )
@@ -190,6 +210,79 @@ class TranslationPackageTests(unittest.TestCase):
             ).getroot()
             self.assertIsNone(translated.find("Thing15.label"))
             self.assertEqual(translated.findtext("Thing16.label"), "новое")
+
+    def test_declared_compatibility_does_not_change_source_version(self):
+        with tempfile.TemporaryDirectory() as temp:
+            source = os.path.join(temp, "SourceMod")
+            self._write(
+                source, "About/About.xml",
+                "<ModMetaData><name>Versioned</name><packageId>a.v</packageId>"
+                "<supportedVersions><li>1.2</li><li>1.3</li><li>1.6</li>"
+                "</supportedVersions></ModMetaData>",
+            )
+            rows = []
+            for version in ("1.2", "1.3"):
+                path = version + "/Defs/Things.xml"
+                self._write(
+                    source, path,
+                    "<Defs><ThingDef><defName>SameThing</defName><label>label "
+                    + version + "</label></ThingDef></Defs>",
+                )
+                rows.append([path, "label", "//label", "label " + version,
+                             "translation " + version, "NEW", ""])
+            self._write(
+                source, "Defs/Common.xml",
+                "<Defs><ThingDef><defName>Common</defName><label>common label"
+                "</label></ThingDef></Defs>",
+            )
+            rows.append(["Defs/Common.xml", "label", "//label", "common label",
+                         "common translation", "NEW", ""])
+            csv_path = os.path.join(temp, "translations.csv")
+            self._write_csv(csv_path, rows)
+
+            for index, (declared, expected) in enumerate((
+                (" 1.2, 1.3, 1.2 ", ["1.2", "1.3"]),
+                ("1.3", ["1.3"]),
+            )):
+                with self.subTest(declared=declared):
+                    output = os.path.join(temp, "Output" + str(index))
+                    result = build_translation_package(
+                        source, csv_path, output, "Russian", "1.2",
+                        compatible_versions=declared,
+                    )
+                    self.assertEqual(result["entries"], 2)
+                    self.assertEqual(result["unmatched"], 0)
+                    about = ET.parse(os.path.join(output, "About", "About.xml")).getroot()
+                    self.assertEqual(
+                        [item.text for item in about.findall("supportedVersions/li")],
+                        expected,
+                    )
+                    language_dir = os.path.join(
+                        output, "Languages", "Russian", "DefInjected", "ThingDef"
+                    )
+                    versioned = ET.parse(os.path.join(language_dir, "Things.xml")).getroot()
+                    self.assertEqual(versioned.findtext("SameThing.label"), "translation 1.2")
+                    common = ET.parse(os.path.join(language_dir, "Common.xml")).getroot()
+                    self.assertEqual(common.findtext("Common.label"), "common translation")
+                    with open(os.path.join(output, "Generation report.txt"), encoding="utf-8") as f:
+                        report = f.read()
+                    self.assertIn("Source RimWorld version: 1.2", report)
+                    self.assertIn("Declared compatible versions: " + ", ".join(expected), report)
+                    self.assertIn("not verified by the translator", report)
+
+    def test_invalid_versions_are_rejected_before_output_is_created(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for source_version, declared in (("1.2, 1.3", "1.2"),
+                                             ("1.2", "1.2,invalid"),
+                                             ("1.2", "")):
+                with self.subTest(source=source_version, declared=declared):
+                    output = os.path.join(temp, "Output")
+                    with self.assertRaises(ValueError):
+                        build_translation_package(
+                            temp, os.path.join(temp, "missing.csv"), output,
+                            "Russian", source_version, compatible_versions=declared,
+                        )
+                    self.assertFalse(os.path.exists(output))
 
     def test_skips_translation_with_broken_placeholders(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -235,6 +328,50 @@ class TranslationPackageTests(unittest.TestCase):
                 os.path.join(output, "Languages", "Russian", "DefInjected", "ThingDef", "Things.xml")
             ).getroot()
             self.assertEqual(translated.findtext("SameThing.label"), "версия")
+
+
+class BuildDialogTests(unittest.TestCase):
+    def test_dialog_passes_source_and_compatibility_separately(self):
+        with tempfile.TemporaryDirectory() as temp:
+            app = Mock()
+            app.source_dir.get.return_value = temp
+            app.t.side_effect = lambda key, *args, **kwargs: key
+            csv_path = os.path.join(temp, "translations.csv")
+            with patch("rimworld_translator.filedialog.askopenfilename", return_value=csv_path), \
+                 patch("rimworld_translator.simpledialog.askstring",
+                       side_effect=["Russian", " 1.2 ", "1.2, 1.3"]) as ask, \
+                 patch("rimworld_translator.filedialog.askdirectory", return_value=temp), \
+                 patch("rimworld_translator.messagebox.showinfo"), \
+                 patch("rimworld_translator.messagebox.showerror") as error, \
+                 patch("rimworld_translator.build_translation_package") as build:
+                build.return_value = {
+                    "entries": 1, "files": 1, "unmatched": 0, "warnings": [],
+                }
+                RimWorldTranslator.build_translation_mod(app)
+                self.assertEqual(ask.call_count, 3)
+                self.assertEqual(ask.call_args_list[2][1]["initialvalue"], "1.2")
+                self.assertEqual(build.call_args[0][-1], "1.2")
+                self.assertEqual(build.call_args[1], {"compatible_versions": "1.2, 1.3"})
+                error.assert_not_called()
+
+    def test_cancelled_or_invalid_compatibility_does_not_build(self):
+        with tempfile.TemporaryDirectory() as temp:
+            for declared in (None, "", "1.2, invalid"):
+                with self.subTest(declared=declared):
+                    app = Mock()
+                    app.source_dir.get.return_value = temp
+                    app.t.side_effect = lambda key, *args, **kwargs: key
+                    with patch("rimworld_translator.filedialog.askopenfilename",
+                               return_value="translations.csv"), \
+                         patch("rimworld_translator.simpledialog.askstring",
+                               side_effect=["Russian", "1.2", declared]), \
+                         patch("rimworld_translator.messagebox.showerror") as error, \
+                         patch("rimworld_translator.filedialog.askdirectory") as output, \
+                         patch("rimworld_translator.build_translation_package") as build:
+                        RimWorldTranslator.build_translation_mod(app)
+                        build.assert_not_called()
+                        output.assert_not_called()
+                        self.assertEqual(error.call_count, 0 if declared is None else 1)
 
 
 if __name__ == "__main__":

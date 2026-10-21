@@ -392,6 +392,18 @@ def path_game_version(path):
     return None
 
 
+def parse_compatible_versions(value):
+    """Parse a user-declared comma-separated list, preserving version order."""
+    versions = []
+    for item in value.split(","):
+        version = item.strip()
+        if not re.fullmatch(r"\d+\.\d+", version):
+            raise ValueError("Expected versions separated by commas, for example: 1.4, 1.5")
+        if version not in versions:
+            versions.append(version)
+    return versions
+
+
 def sanitize_component(value, fallback="Translation"):
     cleaned = re.sub(r"[^\w.()\- ]+", "_", (value or "").strip(), flags=re.UNICODE)
     cleaned = cleaned.strip(" ._")
@@ -586,8 +598,23 @@ def atomic_write_xml(path, root):
 
 
 def build_translation_package(mod_root, csv_path, output_root, language_folder,
-                              game_version):
-    """Create a separate RimWorld translation mod without editing the source mod."""
+                              game_version, compatible_versions=None):
+    """Build from game_version files; compatibility is a separate declaration.
+
+    compatible_versions is a comma-separated string. If omitted, preserve the
+    single-version behavior of existing callers. Declared compatibility does
+    not change source selection or establish compatibility with the game.
+    """
+    if game_version and not re.fullmatch(r"\d+\.\d+", game_version):
+        raise ValueError("Expected one source version, for example: 1.6")
+    metadata = read_mod_metadata(mod_root)
+    if compatible_versions is None:
+        declared_versions = [game_version or (
+            metadata["versions"][-1] if metadata["versions"] else "1.6"
+        )]
+    else:
+        declared_versions = parse_compatible_versions(compatible_versions)
+
     rows = load_translation_rows(csv_path)
     rows_by_file = defaultdict(list)
     for row in rows:
@@ -596,7 +623,6 @@ def build_translation_package(mod_root, csv_path, output_root, language_folder,
             continue
         rows_by_file[row["file"]].append(row)
 
-    metadata = read_mod_metadata(mod_root)
     warnings = []
     invalid_placeholders = 0
     unmatched = 0
@@ -697,9 +723,8 @@ def build_translation_package(mod_root, csv_path, output_root, language_folder,
         warnings.append("Original About.xml has no packageId; dependency must be checked manually.")
     ET.SubElement(about, "packageId").text = translated_package
     supported = ET.SubElement(about, "supportedVersions")
-    ET.SubElement(supported, "li").text = game_version or (
-        metadata["versions"][-1] if metadata["versions"] else "1.6"
-    )
+    for version in declared_versions:
+        ET.SubElement(supported, "li").text = version
     if original_package:
         dependencies = ET.SubElement(about, "modDependencies")
         dependency = ET.SubElement(dependencies, "li")
@@ -719,7 +744,9 @@ def build_translation_package(mod_root, csv_path, output_root, language_folder,
         report.write("RimWorld Mod Translator — safe translation package\n")
         report.write("Source mod: " + metadata["name"] + "\n")
         report.write("Target language folder: " + language_folder + "\n")
-        report.write("Target RimWorld version: " + (game_version or "auto") + "\n")
+        report.write("Source RimWorld version: " + (game_version or "auto") + "\n")
+        report.write("Declared compatible versions: " + ", ".join(declared_versions) + "\n")
+        report.write("Listed compatibility is not verified by the translator.\n")
         report.write("Generated entries: " + str(generated_entries) + "\n")
         report.write("Unmatched CSV rows: " + str(unmatched) + "\n")
         report.write("Placeholder mismatches skipped: " + str(invalid_placeholders) + "\n")
@@ -833,7 +860,9 @@ STRINGS = {
         ),
         "import_err_status": "Ошибка при импорте",
         "target_language":   "Имя папки языка RimWorld (например, Russian)",
-        "target_version":    "Версия RimWorld для перевода (например, 1.6)",
+        "source_version":    "Версия исходников (например, 1.6).\nБудут взяты файлы этой версии и общие файлы мода.",
+        "compatible_versions": "Совместимые версии через запятую (например, 1.4, 1.5).\nСписок будет записан в About.xml и не меняет выбор исходников.\nСовместимость указываете вы, программа её не проверяет.",
+        "invalid_compatible_versions": "Укажите одну или несколько версий через запятую, например: 1.4, 1.5",
         "choose_output":     "Куда сохранить отдельный мод-перевод",
         "build_started":     "Создание отдельного мода-перевода…",
         "build_done":        "Мод-перевод создан!\nПапка: {output}\nФайлов: {files}\nСтрок: {entries}\nНе сопоставлено: {unmatched}",
@@ -916,7 +945,9 @@ STRINGS = {
         ),
         "import_err_status": "Import error",
         "target_language":   "RimWorld language folder name (for example, Russian)",
-        "target_version":    "Target RimWorld version (for example, 1.6)",
+        "source_version":    "Source version (for example, 1.6).\nFiles for this version and common mod files will be used.",
+        "compatible_versions": "Compatible versions, separated by commas (for example, 1.4, 1.5).\nThis list goes into About.xml and does not change source selection.\nYou declare compatibility; the application does not verify it.",
+        "invalid_compatible_versions": "Enter one or more versions separated by commas, for example: 1.4, 1.5",
         "choose_output":     "Choose where to save the separate translation mod",
         "build_started":     "Building separate translation mod…",
         "build_done":        "Translation mod created!\nFolder: {output}\nFiles: {files}\nEntries: {entries}\nUnmatched: {unmatched}",
@@ -1584,15 +1615,27 @@ class RimWorldTranslator:
             return
         language_folder = sanitize_component(language_folder, "Russian")
 
-        game_version = simpledialog.askstring(
-            self.t("build_mod"), self.t("target_version"),
+        source_version = simpledialog.askstring(
+            self.t("build_mod"), self.t("source_version"),
             initialvalue=default_version, parent=self.root,
         )
-        if not game_version:
+        if source_version is None:
             return
-        game_version = game_version.strip()
-        if not re.match(r"^\d+\.\d+$", game_version):
-            messagebox.showerror("", self.t("target_version"))
+        source_version = source_version.strip()
+        if not re.fullmatch(r"\d+\.\d+", source_version):
+            messagebox.showerror("", self.t("source_version"))
+            return
+
+        compatible_versions = simpledialog.askstring(
+            self.t("build_mod"), self.t("compatible_versions"),
+            initialvalue=source_version, parent=self.root,
+        )
+        if compatible_versions is None:
+            return
+        try:
+            parse_compatible_versions(compatible_versions)
+        except ValueError:
+            messagebox.showerror("", self.t("invalid_compatible_versions"))
             return
 
         output_parent = filedialog.askdirectory(title=self.t("choose_output"))
@@ -1613,7 +1656,8 @@ class RimWorldTranslator:
         try:
             result = build_translation_package(
                 self.source_dir.get(), csv_file, output_root,
-                language_folder, game_version,
+                language_folder, source_version,
+                compatible_versions=compatible_versions,
             )
             self.update_progress(100)
             self.log(self.t("saved_to", output_root), "SUCCESS")
